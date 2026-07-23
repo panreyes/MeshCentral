@@ -612,10 +612,13 @@ function CreateMeshCentralServer(config, args) {
     // Launch MeshCentral as a child server and monitor it.
     obj.launchChildServer = function (startArgs) {
         const child_process = require('child_process');
+        if (!obj.restartHash) { obj.restartHash = require('crypto').randomBytes(32).toString('hex'); }
         const isInspectorAttached = (()=> { try { return require('node:inspector').url() !== undefined; } catch (_) { return false; } }).call();
         const logFromChildProcess = isInspectorAttached ? () => {} : console.log.bind(console);
         if (!startArgs.includes('--disable-proto=delete')) { startArgs.unshift('--disable-proto=delete'); }
-        childProcess = child_process.execFile(process.argv[0], startArgs, { maxBuffer: Infinity, cwd: obj.parentpath }, function (error, stdout, stderr) {
+        const env = Object.assign({}, process.env);
+        env['MESHCENTRAL_RESTARTHASH'] = obj.restartHash;
+        childProcess = child_process.execFile(process.argv[0], startArgs, { maxBuffer: Infinity, cwd: obj.parentpath, env: env }, function (error, stdout, stderr) {
             if (childProcess.xrestart == 1) {
                 setTimeout(function () { obj.launchChildServer(startArgs); }, 500); // This is an expected restart.
             } else if (childProcess.xrestart == 2) {
@@ -678,34 +681,36 @@ function CreateMeshCentralServer(config, args) {
         });
         childProcess.stdout.on('data', function (data) {
             if (data[data.length - 1] == '\n') { data = data.substring(0, data.length - 1); }
-            if (data.indexOf('Updating settings folder...') >= 0) { childProcess.xrestart = 1; }
-            else if (data.indexOf('Updating server certificates...') >= 0) { childProcess.xrestart = 1; }
-            else if (data.indexOf('Server Ctrl-C exit...') >= 0) { childProcess.xrestart = 2; }
-            else if (data.indexOf('Starting self upgrade...') >= 0) { childProcess.xrestart = 3; }
-            else if (data.indexOf('Server restart...') >= 0) { childProcess.xrestart = 1; }
-            else if (data.indexOf('Starting self upgrade to: ') >= 0) {
-                const specificupdate = data.substring(data.indexOf('Starting self upgrade to: ') + 26).split('\r')[0].split('\n')[0];
-                if (/^[0-9\.\-]+$/i.test(specificupdate)) {
-                    var isUpgrade = false;
-                    try {
-                        var currentVersion = getCurrentVersion();
-                        if (currentVersion) {
-                            var sVer = specificupdate.split('-')[0].split('.');
-                            var cVer = currentVersion.split('-')[0].split('.');
-                            for (var i = 0; i <= 2; i++) {
-                                var sVal = parseInt(sVer[i] || 0);
-                                var cVal = parseInt(cVer[i] || 0);
-                                if (sVal > cVal) { isUpgrade = true; break; }
-                                else if (sVal < cVal) { break; }
+            if (data.indexOf(obj.restartHash) >= 0) {
+                if (data.indexOf('Updating settings folder...') >= 0) { childProcess.xrestart = 1; }
+                else if (data.indexOf('Updating server certificates...') >= 0) { childProcess.xrestart = 1; }
+                else if (data.indexOf('Server Ctrl-C exit...') >= 0) { childProcess.xrestart = 2; }
+                else if (data.indexOf('Starting self upgrade...') >= 0) { childProcess.xrestart = 3; }
+                else if (data.indexOf('Server restart...') >= 0) { childProcess.xrestart = 1; }
+                else if (data.indexOf('Starting self upgrade to: ') >= 0) {
+                    const specificupdate = data.substring(data.indexOf('Starting self upgrade to: ') + 26).split('\r')[0].split('\n')[0];
+                    if (/^[0-9\.\-]+$/i.test(specificupdate)) {
+                        var isUpgrade = false;
+                        try {
+                            var currentVersion = getCurrentVersion();
+                            if (currentVersion) {
+                                var sVer = specificupdate.split('-')[0].split('.');
+                                var cVer = currentVersion.split('-')[0].split('.');
+                                for (var i = 0; i <= 2; i++) {
+                                    var sVal = parseInt(sVer[i] || 0);
+                                    var cVal = parseInt(cVer[i] || 0);
+                                    if (sVal > cVal) { isUpgrade = true; break; }
+                                    else if (sVal < cVal) { break; }
+                                }
                             }
+                        } catch (ex) { }
+                        if (isUpgrade) {
+                            obj.args.specificupdate = specificupdate;
+                            childProcess.xrestart = 3;
+                        } else {
+                            data += '\nERROR: Downgrade from ' + currentVersion + ' to ' + specificupdate + ' is not allowed.';
+                            childProcess.xrestart = 1;
                         }
-                    } catch (ex) { }
-                    if (isUpgrade) {
-                        obj.args.specificupdate = specificupdate;
-                        childProcess.xrestart = 3;
-                    } else {
-                        data += '\nERROR: Downgrade from ' + currentVersion + ' to ' + specificupdate + ' is not allowed.';
-                        childProcess.xrestart = 1;
                     }
                 }
             }
@@ -802,13 +807,13 @@ function CreateMeshCentralServer(config, args) {
     // Initiate server self-update
     obj.performServerUpdate = function (version) {
         if (obj.serverSelfWriteAllowed != true) return false;
-        if ((version == null) || (version == '') || (typeof version != 'string')) { console.log('Starting self upgrade...'); } else { console.log('Starting self upgrade to: ' + version); }
+        if ((version == null) || (version == '') || (typeof version != 'string')) { console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Starting self upgrade...'); } else { console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Starting self upgrade to: ' + version); }
         process.exit(200);
         return true;
     };
 
     // Initiate server self-update
-    obj.performServerCertUpdate = function () { console.log('Updating server certificates...'); process.exit(200); };
+    obj.performServerCertUpdate = function () { console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Updating server certificates...'); process.exit(200); };
 
     // Start by loading configuration from Vault
     obj.StartVault = function () {
@@ -2407,7 +2412,7 @@ function CreateMeshCentralServer(config, args) {
         obj.db.storePowerEvent({ time: new Date(), nodeid: '*', power: 0, s: 2 }, obj.multiServer, function () {  // s:2 indicates that the server is shutting down.
             if (restoreFile) {
                 obj.debug('main', obj.common.format("Server stopped, updating settings: {0}", restoreFile));
-                console.log("Updating settings folder...");     // do not alter. This specific log message, with the process.exit(123) further on, triggers a process restart. See obj.launchChildServer>childProcess.stdout.on function
+                console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + "Updating settings folder...");     // do not alter. This specific log message, with the process.exit(123) further on, triggers a process restart. See obj.launchChildServer>childProcess.stdout.on function
                 zipExtract(restoreFile, obj.datapath, 'meshcentral-data/', restorePassword)
                     .then((res) => {
                         res['res'] ? console.log(res['mes']) : console.error(res['mes']);
@@ -4256,7 +4261,7 @@ function InstallModuleEx(modulenames, args, func) {
 }
 
 // Detect CTRL-C on Linux and stop nicely
-process.on('SIGINT', function () { if (meshserver != null) { meshserver.Stop(); meshserver = null; } console.log('Server Ctrl-C exit...'); process.exit(); });
+process.on('SIGINT', function () { if (meshserver != null) { meshserver.Stop(); meshserver = null; } console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Server Ctrl-C exit...'); process.exit(); });
 
 // Add a server warning, warnings will be shown to the administrator on the web application
 // TODO: migrate to obj.addServerWarning?

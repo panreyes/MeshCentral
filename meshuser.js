@@ -6919,7 +6919,7 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         });
     }
 
-    function serverCommandPrint(command) { console.log(command.value); }
+    function serverCommandPrint(command) { console.log(process.env['MESHCENTRAL_RESTARTHASH'] + command.value); }
 
     function serverCommandRemovePhone(command) {
         // Do not allow this command when logged in using a login token
@@ -8009,7 +8009,7 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
     }
 
     function serverUserCommandResetServer(cmdData) {
-        console.log("Server restart...");
+        console.log(process.env['MESHCENTRAL_RESTARTHASH'] + "Server restart...");
         process.exit(0);
     }
 
