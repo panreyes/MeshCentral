@@ -66,6 +66,7 @@ function CreateMeshCentralServer(config, args) {
     obj.maintenanceTimer = null;
     obj.serverId = null;
     obj.serverKey = Buffer.from(obj.crypto.randomBytes(48), 'binary');
+    obj.restartHash = require('crypto').randomBytes(32).toString('hex');
     obj.loginCookieEncryptionKey = null;
     obj.invitationLinkEncryptionKey = null;
     obj.serverSelfWriteAllowed = true;
@@ -612,7 +613,6 @@ function CreateMeshCentralServer(config, args) {
     // Launch MeshCentral as a child server and monitor it.
     obj.launchChildServer = function (startArgs) {
         const child_process = require('child_process');
-        if (!obj.restartHash) { obj.restartHash = require('crypto').randomBytes(32).toString('hex'); }
         const isInspectorAttached = (()=> { try { return require('node:inspector').url() !== undefined; } catch (_) { return false; } }).call();
         const logFromChildProcess = isInspectorAttached ? () => {} : console.log.bind(console);
         if (!startArgs.includes('--disable-proto=delete')) { startArgs.unshift('--disable-proto=delete'); }
@@ -807,13 +807,13 @@ function CreateMeshCentralServer(config, args) {
     // Initiate server self-update
     obj.performServerUpdate = function (version) {
         if (obj.serverSelfWriteAllowed != true) return false;
-        if ((version == null) || (version == '') || (typeof version != 'string')) { console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Starting self upgrade...'); } else { console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Starting self upgrade to: ' + version); }
+        if ((version == null) || (version == '') || (typeof version != 'string')) { console.log(process.env['MESHCENTRAL_RESTARTHASH'] + 'Starting self upgrade...'); } else { console.log(process.env['MESHCENTRAL_RESTARTHASH'] + 'Starting self upgrade to: ' + version); }
         process.exit(200);
         return true;
     };
 
     // Initiate server self-update
-    obj.performServerCertUpdate = function () { console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Updating server certificates...'); process.exit(200); };
+    obj.performServerCertUpdate = function () { console.log(process.env['MESHCENTRAL_RESTARTHASH'] + 'Updating server certificates...'); process.exit(200); };
 
     // Start by loading configuration from Vault
     obj.StartVault = function () {
@@ -2412,7 +2412,7 @@ function CreateMeshCentralServer(config, args) {
         obj.db.storePowerEvent({ time: new Date(), nodeid: '*', power: 0, s: 2 }, obj.multiServer, function () {  // s:2 indicates that the server is shutting down.
             if (restoreFile) {
                 obj.debug('main', obj.common.format("Server stopped, updating settings: {0}", restoreFile));
-                console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + "Updating settings folder...");     // do not alter. This specific log message, with the process.exit(123) further on, triggers a process restart. See obj.launchChildServer>childProcess.stdout.on function
+                console.log(process.env['MESHCENTRAL_RESTARTHASH'] + "Updating settings folder...");     // do not alter. This specific log message, with the process.exit(123) further on, triggers a process restart. See obj.launchChildServer>childProcess.stdout.on function
                 zipExtract(restoreFile, obj.datapath, 'meshcentral-data/', restorePassword)
                     .then((res) => {
                         res['res'] ? console.log(res['mes']) : console.error(res['mes']);
@@ -4261,7 +4261,7 @@ function InstallModuleEx(modulenames, args, func) {
 }
 
 // Detect CTRL-C on Linux and stop nicely
-process.on('SIGINT', function () { if (meshserver != null) { meshserver.Stop(); meshserver = null; } console.log((process.env['MESHCENTRAL_RESTARTHASH'] || '') + 'Server Ctrl-C exit...'); process.exit(); });
+process.on('SIGINT', function () { if (meshserver != null) { meshserver.Stop(); meshserver = null; } console.log(process.env['MESHCENTRAL_RESTARTHASH'] + 'Server Ctrl-C exit...'); process.exit(); });
 
 // Add a server warning, warnings will be shown to the administrator on the web application
 // TODO: migrate to obj.addServerWarning?
