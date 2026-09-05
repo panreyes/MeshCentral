@@ -3,6 +3,7 @@
 'use strict';
 
 const values = require('../lib/value');
+const MAX_DETAIL_LENGTH = 2048;
 
 function selectedInventory(sysinfo) {
     const hardware = sysinfo && sysinfo.hardware;
@@ -27,8 +28,32 @@ function stableArray(items) {
     return items.map(values.sortedObject).sort(function (a, b) { return JSON.stringify(a).localeCompare(JSON.stringify(b)); });
 }
 
+function compactJson(value, maximum) {
+    var text;
+    try { text = JSON.stringify(value); } catch (ex) { text = 'unavailable'; }
+    if (typeof text !== 'string') text = 'null';
+    if (text.length <= maximum) return text;
+    return text.substring(0, Math.max(0, maximum - 1)) + '\u2026';
+}
+
+function changeDetail(previous, current, changed) {
+    const names = { gpu: 'GPU', storage: 'Storage', memory: 'Memory', tpm: 'TPM' };
+    const prefix = 'Hardware inventory changed: ', separatorLength = Math.max(0, changed.length - 1) * 2;
+    var fixedLength = prefix.length + separatorLength;
+    for (var i = 0; i < changed.length; i++) fixedLength += names[changed[i]].length + ' [Previous: ; New: ]'.length;
+    const valueLength = Math.max(32, Math.floor((MAX_DETAIL_LENGTH - fixedLength) / (changed.length * 2)));
+    const details = [];
+    for (var j = 0; j < changed.length; j++) {
+        const key = changed[j];
+        details.push(names[key] + ' [Previous: ' + compactJson(previous[key], valueLength) + '; New: ' + compactJson(current[key], valueLength) + ']');
+    }
+    const detail = prefix + details.join('; ');
+    return (detail.length <= MAX_DETAIL_LENGTH) ? detail : (detail.substring(0, MAX_DETAIL_LENGTH - 1) + '\u2026');
+}
+
 module.exports = {
     definition: { id: 'device.inventory.hardwareChanged', title: 'Hardware inventory changed', group: 'Device inventory', kind: 'event', channels: ['web', 'email', 'messaging'], severity: 'info', requiredRight: 0x00100000 },
+    translations: {"es":{"title":"Inventario de hardware modificado","group":"Inventario del dispositivo","settings":{"enabled":"Activado"},"detail":[["Hardware inventory changed: ","Inventario de hardware modificado: "],["Storage [","Almacenamiento ["],["Memory [","Memoria ["],["Previous: ","Anterior: "],["New: ","Nuevo: "]]}},
     source: 'sysinfo',
     evaluate: function (context) {
         const configured = context.settings && context.settings.hardwarechanged;
@@ -42,8 +67,8 @@ module.exports = {
             if (JSON.stringify(previous[key]) !== JSON.stringify(current[key])) changed.push(key);
         }
         if (changed.length === 0) return [];
-        return [{ detail: 'Hardware inventory changed: ' + changed.join(', '), variables: { changed: changed } }];
+        return [{ detail: changeDetail(previous, current, changed) }];
     },
-    _test: { selectedInventory: selectedInventory, stableArray: stableArray }
+    _test: { selectedInventory: selectedInventory, stableArray: stableArray, changeDetail: changeDetail }
 };
 module.exports.settings = { key: 'hardwarechanged', fields: [["enabled","boolean",true]] };
