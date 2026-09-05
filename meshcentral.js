@@ -2481,6 +2481,7 @@ function CreateMeshCentralServer(config, args) {
         }
         if ((event != null) && (event.action === 'alertStateChange') && (obj.alerts != null)) { obj.alerts.importStateEvent(event); }
         if ((event != null) && (event.action === 'alertSettingsChange') && (obj.alerts != null)) { obj.alerts.reloadSettings(); }
+        if ((event != null) && (event.action === 'removenode') && (obj.alerts != null)) { obj.alerts.removeNode(event.nodeid, fromPeerServer == null); }
 
         // Send event to syslog if needed
         if (obj.syslog && event.msg) { obj.syslog.log(obj.syslog.LOG_INFO, event.msg); }

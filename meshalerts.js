@@ -399,6 +399,50 @@ module.exports.CreateMeshAlerts = function (parent) {
         });
     }
 
+    obj.removeNode = function (nodeid, removePersistentData) {
+        const nodeParts = (typeof nodeid === 'string') ? nodeid.split('/') : [];
+        if ((nodeParts.length !== 3) || (nodeParts[0] !== 'node')) return false;
+        const persistent = (removePersistentData !== false);
+
+        for (var stateKey in obj.states) {
+            const state = obj.states[stateKey];
+            if ((state == null) || (state.nodeid !== nodeid)) continue;
+            delete obj.states[stateKey];
+            if (persistent) parent.db.Remove(stateKey);
+        }
+        for (var observationKey in obj.observations) {
+            const observation = obj.observations[observationKey];
+            if ((observation == null) || (observation.nodeid !== nodeid)) continue;
+            delete obj.observations[observationKey];
+            if (persistent) parent.db.Remove(observationKey);
+        }
+
+        delete obj.checkResults[nodeid];
+        delete obj.networkInfo[nodeid];
+        delete obj.sysInfo[nodeid];
+        delete obj.connectivityHistory[nodeid];
+        obj.pendingStateOperations = obj.pendingStateOperations.filter(function (item) { return (item == null) || (item.data == null) || (item.data.nodeid !== nodeid); });
+        obj.pendingReconciliations = obj.pendingReconciliations.filter(function (item) { return (item == null) || (item.device == null) || (item.device._id !== nodeid); });
+        for (var channel of ['email', 'messaging']) {
+            for (var queuedUserid in obj.externalQueues[channel]) {
+                const queue = obj.externalQueues[channel][queuedUserid];
+                if ((queue != null) && Array.isArray(queue.items)) queue.items = queue.items.filter(function (item) { return (item == null) || (item.data == null) || (item.data.nodeid !== nodeid); });
+            }
+        }
+
+        for (var userid in obj.policies) {
+            const policy = obj.policies[userid];
+            if ((policy == null) || !Array.isArray(policy.rules) || !Array.isArray(policy.ignored)) continue;
+            const rules = policy.rules.filter(function (rule) { return (rule == null) || (rule.scope !== 'node') || (rule.scopeId !== nodeid); });
+            const ignored = policy.ignored.filter(function (item) { return (item == null) || (item.nodeid !== nodeid); });
+            if ((rules.length === policy.rules.length) && (ignored.length === policy.ignored.length)) continue;
+            policy.rules = rules;
+            policy.ignored = ignored;
+            if (persistent) savePolicy(policy); else obj.policies[userid] = policy;
+        }
+        return true;
+    };
+
     obj.setRule = function (user, change, callback) {
         obj.ensurePolicy(user, function (policy) {
             if ((policy == null) || (change == null) || (obj.catalog[change.alertType] == null)) { callback('Invalid alert type'); return; }
