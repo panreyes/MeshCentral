@@ -63,6 +63,7 @@
     "_agentPing": 60,
     "_agentPong": 60,
     "_alerts": {
+      "enabled": true,
       "reminderIntervalHours": 24,
       "reminderTime": "10:00",
       "diskSpace": {

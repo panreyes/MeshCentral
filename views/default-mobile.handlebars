@@ -4201,7 +4201,7 @@
             QV('p10files', currentDevicePanel == 2);
             QV('p10registry', currentDevicePanel == 6);
             QV('p10details', currentDevicePanel == 3);
-            QV('p10alerts', currentDevicePanel == 7);
+            QV('p10alerts', ((features3 & 0x00000004) != 0) && (currentDevicePanel == 7));
             QV('p10console', currentDevicePanel == 4);
             QV('p10terminal', currentDevicePanel == 5);
             var menus = [];
@@ -4222,7 +4222,7 @@
             if ((currentDevicePanel != 2) && (currentNode != null) && (meshrights & 8) && ((meshrights == 0xFFFFFFFF) || ((meshrights & 1024) == 0)) && ((currentNode.mtype != 1) && (currentNode.agent) && (currentNode.agent.caps & 4))) { menus.push({ n: "Files", f: 'setupDeviceMenu(2)' }); }
             if ((currentDevicePanel != 6) && (currentNode != null) && (currentNode.agent != null) && (meshrights & 8) && ((meshrights == 0xFFFFFFFF) || ((meshrights & 4194304) == 0))) { menus.push({ n: "Registry", f: 'setupDeviceMenu(6)' }); }
             if ((currentDevicePanel != 3) && (currentNode != null) && (currentNode.mtype < 3) && ((meshrights & 1048576) != 0)) { menus.push({ n: "Details", f: 'setupDeviceMenu(3)' }); }
-            if ((currentDevicePanel != 7) && (currentNode != null) && (currentNode.mtype < 3) && ((meshrights & 1048576) != 0)) { menus.push({ n: "Alerts", f: 'setupDeviceMenu(7)' }); }
+            if (((features3 & 0x00000004) != 0) && (currentDevicePanel != 7) && (currentNode != null) && (currentNode.mtype < 3) && ((meshrights & 1048576) != 0)) { menus.push({ n: "Alerts", f: 'setupDeviceMenu(7)' }); }
             if ((currentDevicePanel != 4) && (currentNode != null) && (meshrights & 0x00000010) && (currentNode.mtype == 2)) { menus.push({ n: "Console", f: 'setupDeviceMenu(4)' }); }
             updateFooterMenu(menus);
             updateCurrentUrl();

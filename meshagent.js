@@ -1042,7 +1042,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
 
         // Tell the core which optional alert collectors are required. Expensive
         // inventories remain disabled unless an administrator configured them.
-        if (parent.parent.alerts != null) { obj.send(JSON.stringify({ action: 'alertconfig', config: parent.parent.alerts.getAgentAlertConfig() })); }
+        obj.send(JSON.stringify({ action: 'alertconfig', config: (parent.parent.alerts != null) ? parent.parent.alerts.getAgentAlertConfig() : { enabled: false } }));
 
         // Agent error log dump
         if (parent.parent.agentErrorLog != null) {

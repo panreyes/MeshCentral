@@ -1767,7 +1767,8 @@ function CreateMeshCentralServer(config, args) {
             }
 
             // Create the alert engine before loading plugins so plugin constructors can register alert types.
-            obj.alerts = require('./meshalerts.js').CreateMeshAlerts(obj);
+            const alertSettings = obj.config && obj.config.settings && obj.config.settings.alerts;
+            if ((alertSettings == null) || (alertSettings.enabled !== false)) { obj.alerts = require('./meshalerts.js').CreateMeshAlerts(obj); }
 
             // Start plugin manager if configuration allows this.
             if ((obj.config) && (obj.config.settings) && (obj.config.settings.plugins != null) && (obj.config.settings.plugins != false) && ((typeof obj.config.settings.plugins != 'object') || (obj.config.settings.plugins.enabled != false))) {
@@ -2274,7 +2275,7 @@ function CreateMeshCentralServer(config, args) {
     // Called when the web server finished loading
     obj.StartEx5 = function () {
         // Start the alert engine after the web server has loaded users and device groups.
-        obj.alerts.init();
+        if (obj.alerts != null) { obj.alerts.init(); }
 
         // Setup the email server for each domain
         var ipKvmSupport = false;

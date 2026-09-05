@@ -826,7 +826,7 @@ module.exports.CreateMeshAlerts = function (parent) {
     };
 
     obj.getAgentAlertConfig = function () {
-        const settings = parent.config.settings.alerts || {}, result = {};
+        const settings = parent.config.settings.alerts || {}, result = { enabled: true };
         function strings(value, maximum) { return Array.isArray(value) ? value.filter(function (x) { return (typeof x === 'string') && (x.length > 0) && (x.length <= 128); }).slice(0, maximum) : []; }
         const services = strings(settings.criticalservicestopped && settings.criticalservicestopped.services, 64);
         const softwareRequired = strings(settings.softwarepolicy && settings.softwarepolicy.required, 64), softwareProhibited = strings(settings.softwarepolicy && settings.softwarepolicy.prohibited, 64);

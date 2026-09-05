@@ -903,6 +903,11 @@
           "type": "object",
           "description": "Settings for device health alerts and notification reminders.",
           "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Enable the extensible device alert and notification system. Set to false to disable alert evaluation, delivery and agent telemetry collection."
+            },
             "reminderIntervalHours": {
               "type": "number",
               "minimum": 0,

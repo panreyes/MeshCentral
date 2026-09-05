@@ -792,7 +792,7 @@ else {
 
 // MeshAgent JavaScript Core Module. This code is sent to and running on the mesh agent.
 var meshCoreObj = { action: 'coreinfo', value: (require('MeshAgent').coreHash ? ((process.versions.compileTime ? process.versions.compileTime : '').split(', ')[1].replace('  ', ' ') + ', ' + crc32c(require('MeshAgent').coreHash)) : ('MeshCore v6')), caps: 14, root: require('user-sessions').isRoot() }; // Capability bitmask: 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript, 32 = Temporary Agent, 64 = Recovery Agent
-var alertCollectionConfig = { domainTrust: false, services: [], securityUpdates: false, software: { required: [], prohibited: [] }, storageHealth: false, diskIo: false, network: { targets: [], gateway: false }, localSecurity: false };
+var alertCollectionConfig = { enabled: false, domainTrust: false, services: [], securityUpdates: false, software: { required: [], prohibited: [] }, storageHealth: false, diskIo: false, network: { targets: [], gateway: false }, localSecurity: false };
 var alertCollectionLast = { domainTrust: 0, securityUpdates: 0, software: 0, storageHealth: 0, localSecurity: 0 };
 
 // Get the operating system description string
@@ -2142,6 +2142,7 @@ function handleServerCommand(data) {
                     return result;
                 }
                 alertCollectionConfig = {
+                    enabled: config.enabled === true,
                     domainTrust: config.domainTrust === true,
                     services: cleanAlertConfigStrings(config.services),
                     securityUpdates: config.securityUpdates === true,
@@ -2151,7 +2152,7 @@ function handleServerCommand(data) {
                     network: { targets: cleanAlertConfigStrings(config.network && config.network.targets).slice(0, 8), gateway: !!(config.network && (config.network.gateway === true)) },
                     localSecurity: config.localSecurity === true
                 };
-                sendAlertTelemetry(true);
+                if (alertCollectionConfig.enabled) sendAlertTelemetry(true);
                 break;
             }
             case 'errorlog': // Return agent error log
@@ -7668,6 +7669,7 @@ function sendPeriodicServerUpdate(flags, force) {
 }
 
 function sendAlertTelemetry(force) {
+    if (alertCollectionConfig.enabled !== true) return;
     const now = Date.now();
     try {
         var cpu = require('sysinfo').cpuUtilization();
