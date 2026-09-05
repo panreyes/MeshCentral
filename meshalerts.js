@@ -10,6 +10,7 @@
 
 const crypto = require('crypto');
 const coreAlertModules = require('./alerts');
+const alertSettings = require('./alerts/settings');
 
 const POLICY_VERSION = 1;
 const TYPE_ID_RE = /^[a-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -133,25 +134,24 @@ module.exports.CreateMeshAlerts = function (parent) {
     obj.sysInfo = {};
     obj.externalQueues = { email: {}, messaging: {} };
     obj.connectivityHistory = {};
+    obj.coreAlertModules = coreAlertModules.getModules();
+    obj.settings = alertSettings.defaults(obj.coreAlertModules);
+    obj.settingsReady = false;
     obj.legacyAccountDefaults = {};
     obj.legacyAccountMasks = {};
     obj.remindersEnabled = true;
     obj.reminderHour = 10;
     obj.reminderMinute = 0;
-    if (parent.config.settings.alerts != null) {
-        // Keep accepting reminderIntervalHours: 0 as the compatibility switch for
-        // disabling reminders. Positive interval values no longer alter the daily
-        // schedule.
-        if ((typeof parent.config.settings.alerts.reminderintervalhours == 'number') && (parent.config.settings.alerts.reminderintervalhours <= 0)) obj.remindersEnabled = false;
-        if (typeof parent.config.settings.alerts.remindertime == 'string') {
-            const reminderTimeMatch = /^([01][0-9]|2[0-3]):([0-5][0-9])$/.exec(parent.config.settings.alerts.remindertime);
-            if (reminderTimeMatch != null) {
-                obj.reminderHour = parseInt(reminderTimeMatch[1]);
-                obj.reminderMinute = parseInt(reminderTimeMatch[2]);
-            }
-        }
+    obj.reminderTime = '10:00';
+
+    function applyReminderSettings() {
+        obj.remindersEnabled = obj.settings.remindersenabled !== false;
+        const reminderTimeMatch = /^([01][0-9]|2[0-3]):([0-5][0-9])$/.exec(obj.settings.remindertime || '10:00');
+        obj.reminderHour = parseInt(reminderTimeMatch[1]);
+        obj.reminderMinute = parseInt(reminderTimeMatch[2]);
+        obj.reminderTime = obj.settings.remindertime || '10:00';
     }
-    obj.reminderTime = (obj.reminderHour < 10 ? '0' : '') + obj.reminderHour + ':' + (obj.reminderMinute < 10 ? '0' : '') + obj.reminderMinute;
+    applyReminderSettings();
     // Web bits 2, 4 and 8 move into notificationPolicy. Keep only the visual
     // preferences (sound bit 1 and group-name bit 16) in configured web state.
     for (var domainid in parent.config.domains) {
@@ -201,7 +201,6 @@ module.exports.CreateMeshAlerts = function (parent) {
         return true;
     };
 
-    obj.coreAlertModules = coreAlertModules.getModules();
     for (var coreModuleIndex = 0; coreModuleIndex < obj.coreAlertModules.length; coreModuleIndex++) {
         if (!obj.registerAlertType('core', obj.coreAlertModules[coreModuleIndex].definition)) throw new Error('Unable to register core alert type ' + obj.coreAlertModules[coreModuleIndex].definition.id + '.');
     }
@@ -770,7 +769,7 @@ module.exports.CreateMeshAlerts = function (parent) {
                 data: data,
                 previousData: previousData,
                 periodic: periodic === true,
-                settings: parent.config.settings.alerts || {},
+                settings: obj.settings,
                 isActive: function (instanceKey) { return obj.states[stateId(device._id, alertType, instanceKey)] != null; },
                 getState: function (instanceKey) { return obj.states[stateId(device._id, alertType, instanceKey)] || null; },
                 getObservation: function (instanceKey) { const x = observationFor(device, alertType, instanceKey || ''); return (x == null) ? null : clone(x.data); },
@@ -825,8 +824,81 @@ module.exports.CreateMeshAlerts = function (parent) {
         obj.reconcileSource('inventory', { time: (typeof time === 'number') ? time : Date.now() }, device);
     };
 
+    function validateSettingRelationships(settings) {
+        for (var i = 0; i < obj.coreAlertModules.length; i++) {
+            const proposal = obj.coreAlertModules[i].settings;
+            if ((proposal == null) || (typeof proposal.validate !== 'function')) continue;
+            const error = proposal.validate(settings[proposal.key]);
+            if (typeof error === 'string') return error;
+        }
+        return null;
+    }
+
+    function sendAgentSettings() {
+        if ((parent.webserver == null) || (parent.webserver.wsagents == null)) return;
+        const message = JSON.stringify({ action: 'alertconfig', config: obj.getAgentAlertConfig() });
+        for (var nodeid in parent.webserver.wsagents) { try { parent.webserver.wsagents[nodeid].send(message); } catch (ex) { } }
+    }
+
+    function reconcileSettings() {
+        parent.db.GetAllType('node', function (err, nodes) {
+            if ((err != null) || !Array.isArray(nodes)) return;
+            var index = 0;
+            const nextBatch = function () {
+                const end = Math.min(index + 100, nodes.length);
+                for (; index < end; index++) {
+                    const node = nodes[index];
+                    obj.reconcileNodeHealth(node);
+                    obj.reconcileNode(node);
+                    if (obj.sysInfo[node._id] != null) obj.reconcileSysInfo(obj.sysInfo[node._id].data, node);
+                    if (obj.networkInfo[node._id] != null) obj.reconcileNetInfo(obj.networkInfo[node._id].data, node);
+                }
+                if (index < nodes.length) setTimeout(nextBatch, 10);
+            };
+            nextBatch();
+        });
+        runPeriodicChecks();
+    }
+
+    function applySettingsDocument(doc, refresh) {
+        if ((doc == null) || (doc.type !== 'alertSettings') || (doc.version !== alertSettings.VERSION)) return false;
+        const normalized = alertSettings.normalize(doc.settings, true, obj.coreAlertModules);
+        if (normalized.errors.length > 0) return false;
+        obj.settings = normalized.settings;
+        applyReminderSettings();
+        if (obj.reminderTimer != null) { clearTimeout(obj.reminderTimer); obj.reminderTimer = null; }
+        if (obj.dataInitialized === true) scheduleNextReminder();
+        if (refresh === true) { sendAgentSettings(); reconcileSettings(); }
+        return true;
+    }
+
+    obj.importSettings = function (doc) { return applySettingsDocument(doc, true); };
+    obj.reloadSettings = function () {
+        parent.db.Get(alertSettings.DOCUMENT_ID, function (err, docs) {
+            if ((err == null) && Array.isArray(docs) && (docs.length === 1)) applySettingsDocument(docs[0], true);
+        });
+    };
+
+    obj.getServerSettings = function () {
+        return { action: 'alertsettings', version: alertSettings.VERSION, settings: alertSettings.clone(obj.settings), definitions: alertSettings.definitions(obj.coreAlertModules) };
+    };
+
+    obj.setServerSettings = function (settings, callback) {
+        const normalized = alertSettings.normalize(settings, true, obj.coreAlertModules);
+        if (normalized.errors.length > 0) { callback('Invalid setting: ' + normalized.errors[0]); return; }
+        const relationshipError = validateSettingRelationships(normalized.settings);
+        if (relationshipError != null) { callback(relationshipError); return; }
+        const doc = { _id: alertSettings.DOCUMENT_ID, type: 'alertSettings', version: alertSettings.VERSION, settings: normalized.settings, updated: Date.now() };
+        parent.db.Set(doc, function (err) {
+            if (err != null) { callback('Unable to save alert settings'); return; }
+            applySettingsDocument(doc, true);
+            if (parent.DispatchEvent != null) parent.DispatchEvent(['*'], obj, { action: 'alertSettingsChange', nolog: 1 });
+            callback(null);
+        });
+    };
+
     obj.getAgentAlertConfig = function () {
-        const settings = parent.config.settings.alerts || {}, result = { enabled: true };
+        const settings = obj.settings, result = { enabled: true };
         function strings(value, maximum) { return Array.isArray(value) ? value.filter(function (x) { return (typeof x === 'string') && (x.length > 0) && (x.length <= 128); }).slice(0, maximum) : []; }
         const services = strings(settings.criticalservicestopped && settings.criticalservicestopped.services, 64);
         const softwareRequired = strings(settings.softwarepolicy && settings.softwarepolicy.required, 64), softwareProhibited = strings(settings.softwarepolicy && settings.softwarepolicy.prohibited, 64);
@@ -1058,9 +1130,8 @@ module.exports.CreateMeshAlerts = function (parent) {
         }, next.getTime() - now);
     }
 
-    obj.init = function () {
-        if (obj.initialized === true) return;
-        obj.initialized = true;
+    function initializeData() {
+        obj.dataInitialized = true;
         parent.db.GetAllType('notificationPolicy', function (err, docs) {
             if ((err == null) && Array.isArray(docs)) { for (var i = 0; i < docs.length; i++) obj.importPolicy(docs[i]); }
             if (parent.webserver && parent.webserver.users) {
@@ -1131,6 +1202,22 @@ module.exports.CreateMeshAlerts = function (parent) {
         });
         obj.periodicTimer = setInterval(runPeriodicChecks, 60000);
         scheduleNextReminder();
+    }
+
+    obj.init = function () {
+        if (obj.initialized === true) return;
+        obj.initialized = true;
+        parent.db.Get(alertSettings.DOCUMENT_ID, function (err, docs) {
+            var loaded = false;
+            if ((err == null) && Array.isArray(docs) && (docs.length === 1)) loaded = applySettingsDocument(docs[0], false);
+            if (!loaded) {
+                obj.settings = alertSettings.defaults(obj.coreAlertModules);
+                applyReminderSettings();
+                parent.db.Set({ _id: alertSettings.DOCUMENT_ID, type: 'alertSettings', version: alertSettings.VERSION, settings: alertSettings.clone(obj.settings), updated: Date.now() });
+            }
+            obj.settingsReady = true;
+            initializeData();
+        });
     };
 
     obj.close = function () {

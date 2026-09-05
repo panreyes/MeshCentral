@@ -42,3 +42,4 @@ module.exports = {
     },
     _test: { settings: settings }
 };
+module.exports.settings = { key: 'hightemperature', fields: [["warningcelsius","number",85,0.01,200],["recoverycelsius","number",75,-50,200],["consecutivesamples","integer",3,1,100]], validate: function (values) { if (values.warningcelsius <= values.recoverycelsius) return 'Invalid thresholds in hightemperature'; } };

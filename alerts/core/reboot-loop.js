@@ -46,3 +46,4 @@ module.exports = {
     },
     _test: { settings: settings, bootTime: bootTime }
 };
+module.exports.settings = { key: 'rebootloop', fields: [["windowminutes","number",60,1,10080],["rebootcount","integer",3,2,100],["recoveryminutes","number",120,1,43200]] };

@@ -54,3 +54,4 @@ module.exports = {
     },
     _test: { settings: settings }
 };
+module.exports.settings = { key: 'diskexhaustionforecast', fields: [["horizondays","number",0,0,36500],["recoverydays","number",30,0,36500],["minimumspanhours","number",6,0.01,8760],["minimumsamples","integer",3,2,50]], validate: function (values) { if (values.recoverydays < values.horizondays) return 'Invalid thresholds in diskexhaustionforecast'; } };

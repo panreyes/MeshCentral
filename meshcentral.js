@@ -2480,6 +2480,7 @@ function CreateMeshCentralServer(config, args) {
             if (event.policy != null) { obj.alerts.importPolicy(event.policy); } else { obj.alerts.reloadPolicy(event.userid); }
         }
         if ((event != null) && (event.action === 'alertStateChange') && (obj.alerts != null)) { obj.alerts.importStateEvent(event); }
+        if ((event != null) && (event.action === 'alertSettingsChange') && (obj.alerts != null)) { obj.alerts.reloadSettings(); }
 
         // Send event to syslog if needed
         if (obj.syslog && event.msg) { obj.syslog.log(obj.syslog.LOG_INFO, event.msg); }

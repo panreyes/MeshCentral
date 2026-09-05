@@ -36,3 +36,4 @@ module.exports = {
     },
     _test: { settings: settings }
 };
+module.exports.settings = { key: 'excessiveuptime', fields: [["warningdays","number",30,0,36500],["recoverydays","number",25,0,36500]], validate: function (values) { if (values.warningdays <= values.recoverydays) return 'Invalid thresholds in excessiveuptime'; } };

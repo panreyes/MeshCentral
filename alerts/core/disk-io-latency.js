@@ -19,3 +19,4 @@ module.exports = {
         return output;
     }
 };
+module.exports.settings = { key: 'diskiolatency', fields: [["enabled","boolean",false],["warningmilliseconds","number",50,0.01,60000],["recoverymilliseconds","number",20,0,60000],["consecutivesamples","integer",3,1,100]], validate: function (values) { if (values.warningmilliseconds <= values.recoverymilliseconds) return 'Invalid thresholds in diskiolatency'; } };

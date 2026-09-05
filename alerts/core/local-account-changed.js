@@ -14,3 +14,4 @@ module.exports = {
         return [{ detail: 'Local account inventory changed', variables: { added: added, removed: removed } }];
     }
 };
+module.exports.settings = { key: 'localaccountchanged', fields: [["enabled","boolean",false]] };

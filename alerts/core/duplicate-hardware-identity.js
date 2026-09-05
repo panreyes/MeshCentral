@@ -18,3 +18,4 @@ module.exports = {
         return [{ state: 'active', detail: 'Duplicate ' + types.join(', ') + ' also reported by another device', variables: { identityTypes: types, duplicateCount: duplicates.length } }];
     }
 };
+module.exports.settings = { key: 'duplicatehardwareidentity', fields: [["enabled","boolean",true]] };

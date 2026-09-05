@@ -45,3 +45,4 @@ module.exports = {
     },
     _test: { configuredMinimum: configuredMinimum, memoryInventory: memoryInventory }
 };
+module.exports.settings = { key: 'lowinstalledmemory', fields: [["minimumgigabytes","number",0,0,1048576],["minimumwindowsgigabytes","number",null,0,1048576],["minimumlinuxgigabytes","number",null,0,1048576],["minimumdarwingigabytes","number",null,0,1048576]] };

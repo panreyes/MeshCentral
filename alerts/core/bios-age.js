@@ -16,3 +16,4 @@ module.exports = {
         return [{ state: ((warningDays > 0) && (ageDays >= warningDays)) ? 'active' : 'healthy', detail: 'BIOS firmware is ' + Math.floor(ageDays) + ' days old' }];
     }
 };
+module.exports.settings = { key: 'biosage', fields: [["warningdays","number",1825,0,36500]] };

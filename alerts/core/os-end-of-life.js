@@ -40,3 +40,4 @@ module.exports = {
     },
     _test: { system: system }
 };
+module.exports.settings = { key: 'osendoflife', fields: [["rules","rules",[],null,null,null,256]] };

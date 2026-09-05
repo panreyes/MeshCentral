@@ -14,3 +14,4 @@ module.exports = {
         return [{ state: (updates.pending > 0) ? 'active' : 'healthy', detail: (updates.pending > 0) ? (updates.pending + ' security update(s) are pending' + (titles.length ? ': ' + titles.join(', ') : '')) : 'No pending security updates were found', variables: { pending: updates.pending, titles: titles } }];
     }
 };
+module.exports.settings = { key: 'missingsecurityupdates', fields: [["enabled","boolean",false]] };

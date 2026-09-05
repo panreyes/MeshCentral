@@ -30,3 +30,4 @@ module.exports = {
     },
     _test: { configuredServices: configuredServices }
 };
+module.exports.settings = { key: 'criticalservicestopped', fields: [["services","strings",[],null,null,null,64]] };

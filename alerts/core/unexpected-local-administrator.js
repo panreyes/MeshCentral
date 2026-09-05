@@ -10,3 +10,4 @@ module.exports = {
         return [{ state: unexpected.length ? 'active' : 'healthy', detail: unexpected.length ? ('Unexpected local administrators: ' + unexpected.join(', ')) : 'All local administrators are allowed', variables: { unexpected: unexpected } }];
     }
 };
+module.exports.settings = { key: 'unexpectedlocaladministrator', fields: [["allowed","strings",[],null,null,null,64]] };

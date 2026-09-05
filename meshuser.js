@@ -1850,6 +1850,25 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                     });
                     break;
                 }
+            case 'getalertsettings':
+                {
+                    if ((parent.parent.alerts == null) || (user.siteadmin !== 0xFFFFFFFF)) break;
+                    const response = parent.parent.alerts.getServerSettings();
+                    if (command.responseid != null) response.responseid = command.responseid;
+                    try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                    break;
+                }
+            case 'setalertsettings':
+                {
+                    if ((parent.parent.alerts == null) || (user.siteadmin !== 0xFFFFFFFF)) break;
+                    parent.parent.alerts.setServerSettings(command.settings, function (err) {
+                        const response = { action: 'setalertsettings', result: err || 'ok' };
+                        if (command.responseid != null) response.responseid = command.responseid;
+                        try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                        if (err == null) { try { ws.send(JSON.stringify(parent.parent.alerts.getServerSettings())); } catch (ex) { } }
+                    });
+                    break;
+                }
             case 'getdevicealerts':
                 {
                     const response = { action: 'getdevicealerts', nodeid: command.nodeid, alerts: [] };

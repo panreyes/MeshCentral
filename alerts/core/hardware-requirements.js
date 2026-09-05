@@ -47,3 +47,4 @@ module.exports = {
     },
     _test: { installedMemory: installedMemory, architecture: architecture }
 };
+module.exports.settings = { key: 'hardwarerequirements', fields: [["minimummemorygigabytes","number",0,0,1048576],["minimumstoragegigabytes","number",0,0,1073741824],["allowedarchitectures","strings",[],null,null,null,32]] };

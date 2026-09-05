@@ -32,3 +32,4 @@ module.exports = {
     },
     _test: { settings: settings }
 };
+module.exports.settings = { key: 'sustainedmemorypressure', fields: [["warningpercent","number",90,0.01,100],["recoverypercent","number",80,0,99.99],["durationminutes","number",15,0.01,10080]], validate: function (values) { if (values.warningpercent <= values.recoverypercent) return 'Invalid thresholds in sustainedmemorypressure'; } };

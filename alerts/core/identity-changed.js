@@ -36,3 +36,4 @@ module.exports = {
     },
     _test: { identity: identity }
 };
+module.exports.settings = { key: 'identitychanged', fields: [["enabled","boolean",true]] };

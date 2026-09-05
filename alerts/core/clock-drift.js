@@ -28,3 +28,4 @@ module.exports = {
     },
     _test: { settings: settings }
 };
+module.exports.settings = { key: 'clockdrift', fields: [["warningseconds","number",300,0.01,31536000],["recoveryseconds","number",120,0,31536000]], validate: function (values) { if (values.warningseconds <= values.recoveryseconds) return 'Invalid thresholds in clockdrift'; } };

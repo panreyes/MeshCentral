@@ -17,3 +17,4 @@ module.exports = {
         return [{ state: 'active', detail: 'MAC address also reported by another device', variables: { identities: duplicates.map(function (x) { return x.identity; }), duplicateCount: duplicates.length } }];
     }
 };
+module.exports.settings = { key: 'duplicatenetworkidentity', fields: [["enabled","boolean",true]] };

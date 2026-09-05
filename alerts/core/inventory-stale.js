@@ -27,3 +27,4 @@ module.exports = {
     },
     _test: { threshold: threshold }
 };
+module.exports.settings = { key: 'inventorystale', fields: [["hours","number",24,0,87600]] };

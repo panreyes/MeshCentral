@@ -32,3 +32,4 @@ module.exports = {
     },
     _test: { settings: settings }
 };
+module.exports.settings = { key: 'connectionflapping', fields: [["windowminutes","number",10,1,1440],["transitioncount","integer",6,2,1000],["recoveryminutes","number",30,1,1440]] };

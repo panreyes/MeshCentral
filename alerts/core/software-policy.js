@@ -25,3 +25,4 @@ module.exports = {
     },
     _test: { policy: policy }
 };
+module.exports.settings = { key: 'softwarepolicy', fields: [["required","strings",[],null,null,null,64],["prohibited","strings",[],null,null,null,64]] };

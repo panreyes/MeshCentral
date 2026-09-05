@@ -26,3 +26,4 @@ module.exports = {
         return result;
     }
 };
+module.exports.settings = { key: 'diskencryption', fields: [["required","boolean",false]] };

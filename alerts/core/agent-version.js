@@ -14,3 +14,4 @@ module.exports = {
         return [{ state: (current < minimum) ? 'active' : 'healthy', detail: 'Agent version is ' + current + '; minimum is ' + minimum, variables: { current: current, minimum: minimum } }];
     }
 };
+module.exports.settings = { key: 'agentversion', fields: [["minimum","integer",0,0,2147483647]] };

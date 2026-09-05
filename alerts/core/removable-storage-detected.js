@@ -29,3 +29,4 @@ module.exports = {
     },
     _test: { devices: devices }
 };
+module.exports.settings = { key: 'removablestoragedetected', fields: [["enabled","boolean",false]] };

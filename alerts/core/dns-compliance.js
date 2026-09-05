@@ -19,3 +19,4 @@ module.exports = {
     },
     _test: { normalize: normalize }
 };
+module.exports.settings = { key: 'dnscompliance', fields: [["allowedservers","strings",[],null,null,null,128]] };

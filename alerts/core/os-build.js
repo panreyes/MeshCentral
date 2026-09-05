@@ -31,3 +31,4 @@ module.exports = {
         return [{ state: (comparison < 0) ? 'active' : 'healthy', detail: platform + ' version ' + current + ((comparison < 0) ? ' is below required version ' : ' meets required version ') + minimum }];
     }
 };
+module.exports.settings = { key: 'osbuild', fields: [["minimumwindowsbuild","string",null],["minimumlinuxkernel","string",null]] };

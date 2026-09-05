@@ -10,3 +10,4 @@ module.exports = {
         return [{ state: enabled.length ? 'active' : 'healthy', detail: enabled.length ? ('Enabled insecure protocols: ' + enabled.join(', ')) : 'No configured insecure protocols are enabled', variables: { enabled: enabled } }];
     }
 };
+module.exports.settings = { key: 'insecureprotocolenabled', fields: [["check","multienum",[],null,null,["smb1","tls10","tls11","ntlmv1"],4]] };

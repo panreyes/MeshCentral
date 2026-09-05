@@ -11,3 +11,4 @@ module.exports = {
         return output;
     }
 };
+module.exports.settings = { key: 'gatewayunreachable', fields: [["enabled","boolean",false]] };

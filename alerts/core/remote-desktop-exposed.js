@@ -13,3 +13,4 @@ module.exports = {
         return [{ state: exposed.length ? 'active' : 'healthy', detail: exposed.length ? ('Disallowed remote access is listening: ' + exposed.join(', ')) : 'Remote access exposure matches policy', variables: { exposed: exposed } }];
     }
 };
+module.exports.settings = { key: 'remotedesktopexposed', fields: [["enabled","boolean",false],["allowrdp","boolean",true],["allowssh","boolean",true]] };

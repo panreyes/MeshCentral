@@ -46,3 +46,4 @@ module.exports = {
     },
     _test: { selectedInventory: selectedInventory, stableArray: stableArray }
 };
+module.exports.settings = { key: 'hardwarechanged', fields: [["enabled","boolean",true]] };

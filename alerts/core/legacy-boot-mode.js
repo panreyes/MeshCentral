@@ -15,3 +15,4 @@ module.exports = {
         return [{ state: 'unknown' }];
     }
 };
+module.exports.settings = { key: 'legacybootmode', fields: [["requireuefi","boolean",false]] };

@@ -47,3 +47,7 @@ module.exports = {
     evaluate: evaluate,
     _test: { getSettings: getSettings }
 };
+module.exports.settings = { key: 'diskspace', fields: [
+    ['warningpercent', 'number', 15, 0, 99.99],
+    ['recoverypercent', 'number', 20, 0.01, 100]
+], validate: function (values) { if (values.recoverypercent <= values.warningpercent) return 'Invalid thresholds in diskspace'; } };

@@ -17,3 +17,4 @@ module.exports = {
         return output;
     }
 };
+module.exports.settings = { key: 'networkpacketloss', fields: [["targets","strings",[],null,null,null,8],["warningpercent","number",25,0.01,100],["recoverypercent","number",5,0,99.99]], validate: function (values) { if (values.warningpercent <= values.recoverypercent) return 'Invalid thresholds in networkpacketloss'; } };

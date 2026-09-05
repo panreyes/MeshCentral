@@ -23,3 +23,4 @@ module.exports = {
     },
     _test: { virtualState: virtualState }
 };
+module.exports.settings = { key: 'virtualization', fields: [["expected","enum","any",null,null,["any","physical","virtual"]]] };

@@ -14,3 +14,4 @@ module.exports = {
         return [{ state: failures.length ? 'active' : 'healthy', detail: failures.length ? ('Password policy failures: ' + failures.join(', ')) : 'Password policy satisfies the configured requirements', variables: { failures: failures } }];
     }
 };
+module.exports.settings = { key: 'passwordpolicy', fields: [["enabled","boolean",false],["minimumlength","integer",12,0,128],["maximumagedays","integer",90,0,999],["lockoutthreshold","integer",10,0,999]] };

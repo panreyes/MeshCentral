@@ -32,3 +32,4 @@ module.exports = {
     },
     _test: { getThreshold: getThreshold }
 };
+module.exports.settings = { key: 'batterycycles', fields: [["warningcycles","number",800,0,100000]] };

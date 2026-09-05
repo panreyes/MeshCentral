@@ -16,3 +16,4 @@ module.exports = {
         return [{ state: 'healthy', detail: 'Device is joined to domain ' + osinfo.Domain }];
     }
 };
+module.exports.settings = { key: 'domainmembership', fields: [["required","boolean",false],["alloweddomains","strings",[],null,null,null,128]] };

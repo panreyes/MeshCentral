@@ -34,3 +34,4 @@ module.exports = {
     },
     _test: { flag: flag }
 };
+module.exports.settings = { key: 'tpm', fields: [["required","boolean",false],["minimumversion","string","2.0"]] };

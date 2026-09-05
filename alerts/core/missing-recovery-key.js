@@ -23,3 +23,4 @@ module.exports = {
         return output;
     }
 };
+module.exports.settings = { key: 'missingrecoverykey', fields: [["required","boolean",false]] };

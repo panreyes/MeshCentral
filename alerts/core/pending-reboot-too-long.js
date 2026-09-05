@@ -34,3 +34,4 @@ module.exports = {
     },
     _test: { threshold: threshold }
 };
+module.exports.settings = { key: 'pendingreboottoolong', fields: [["days","number",3,0,36500]] };

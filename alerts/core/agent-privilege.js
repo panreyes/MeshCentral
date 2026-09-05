@@ -13,3 +13,4 @@ module.exports = {
         return [{ state: root ? 'healthy' : 'active', detail: root ? 'MeshAgent is running with administrative privileges' : 'MeshAgent is running with reduced privileges', variables: { administrative: root } }];
     }
 };
+module.exports.settings = { key: 'agentprivilege', fields: [["required","boolean",false]] };

@@ -24,3 +24,4 @@ module.exports = {
     },
     _test: { platformAndName: platformAndName }
 };
+module.exports.settings = { key: 'osedition', fields: [["allowedwindows","strings",[],null,null,null,64],["allowedlinux","strings",[],null,null,null,64],["alloweddarwin","strings",[],null,null,null,64]] };

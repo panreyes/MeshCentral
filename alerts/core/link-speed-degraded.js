@@ -57,3 +57,4 @@ module.exports = {
     },
     _test: { settings: settings, links: links }
 };
+module.exports.settings = { key: 'linkspeeddegraded', fields: [["ratiopercent","number",50,0.01,99.99],["recoverypercent","number",80,0.01,100],["minimumbaselinembps","number",100,0,10000000]], validate: function (values) { if (values.recoverypercent <= values.ratiopercent) return 'Invalid thresholds in linkspeeddegraded'; } };

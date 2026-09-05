@@ -20,3 +20,4 @@ module.exports = {
     },
     _test: { placeholders: placeholders }
 };
+module.exports.settings = { key: 'incompleteidentifiers', fields: [["enabled","boolean",false]] };

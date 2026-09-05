@@ -16,3 +16,4 @@ module.exports = {
         return output;
     }
 };
+module.exports.settings = { key: 'smartdiskfailure', fields: [["enabled","boolean",false]] };

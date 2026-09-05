@@ -14,3 +14,4 @@ module.exports = {
         return [{ state: trust.healthy ? 'healthy' : 'active', detail: trust.healthy ? ('Secure channel to ' + domain + ' is healthy') : ('Secure channel to ' + domain + ' failed'), variables: { domain: domain, healthy: trust.healthy } }];
     }
 };
+module.exports.settings = { key: 'domaintrustfailure', fields: [["enabled","boolean",false]] };

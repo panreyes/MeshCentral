@@ -11,3 +11,4 @@ module.exports = {
         return [{ state: unexpected.length ? 'active' : 'healthy', detail: unexpected.length ? ('Unexpected listening TCP ports: ' + unexpected.join(', ')) : 'All listening TCP ports are allowed', variables: { unexpected: unexpected } }];
     }
 };
+module.exports.settings = { key: 'unexpectedlisteningport', fields: [["enabled","boolean",false],["allowedports","integers",[],1,65535,null,1024]] };

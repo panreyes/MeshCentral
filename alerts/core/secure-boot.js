@@ -17,3 +17,4 @@ module.exports = {
         return [{ state: enabled ? 'healthy' : 'active', detail: platform + ' Secure Boot is ' + (enabled ? 'enabled' : 'disabled'), variables: { platform: platform.toLowerCase(), enabled: enabled } }];
     }
 };
+module.exports.settings = { key: 'secureboot', fields: [["required","boolean",false]] };

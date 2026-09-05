@@ -15,3 +15,4 @@ module.exports = {
         return [{ detail: 'Network interfaces, addresses or gateways changed', variables: { previous: previous.slice(0, 20), current: current.slice(0, 20) } }];
     }
 };
+module.exports.settings = { key: 'networkconfigurationchanged', fields: [["enabled","boolean",false]] };
