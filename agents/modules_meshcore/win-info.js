@@ -190,6 +190,14 @@ function pendingReboot()
     return (ret);
 }
 
+function secureBoot()
+{
+    var value = regQuery(require('win-registry').HKEY.LocalMachine, 'SYSTEM\\CurrentControlSet\\Control\\SecureBoot\\State', 'UEFISecureBootEnabled');
+    if ((value === 1) || (value === '1')) return true;
+    if ((value === 0) || (value === '0')) return false;
+    return null;
+}
+
 function installedApps() {
     var ret = new promise(function (res, rej) { this._res = res; this._rej = rej; });
     var registry = require('win-registry');
@@ -455,10 +463,10 @@ function printers() {
 
 if (process.platform == 'win32')
 {
-    module.exports = { qfe: qfe, av: av, defrag: defrag, pendingReboot: pendingReboot, installedApps: installedApps, installedStoreApps: installedStoreApps, defender: defender, printers: printers };
+    module.exports = { qfe: qfe, av: av, defrag: defrag, pendingReboot: pendingReboot, secureBoot: secureBoot, installedApps: installedApps, installedStoreApps: installedStoreApps, defender: defender, printers: printers };
 }
 else
 {
     var not_supported = function () { throw (process.platform + ' not supported'); };
-    module.exports = { qfe: not_supported, av: not_supported, defrag: not_supported, pendingReboot: not_supported, installedApps: not_supported, installedStoreApps: not_supported, defender: not_supported, printers: not_supported };
+    module.exports = { qfe: not_supported, av: not_supported, defrag: not_supported, pendingReboot: not_supported, secureBoot: not_supported, installedApps: not_supported, installedStoreApps: not_supported, defender: not_supported, printers: not_supported };
 }

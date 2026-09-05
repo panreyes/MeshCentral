@@ -792,6 +792,8 @@ else {
 
 // MeshAgent JavaScript Core Module. This code is sent to and running on the mesh agent.
 var meshCoreObj = { action: 'coreinfo', value: (require('MeshAgent').coreHash ? ((process.versions.compileTime ? process.versions.compileTime : '').split(', ')[1].replace('  ', ' ') + ', ' + crc32c(require('MeshAgent').coreHash)) : ('MeshCore v6')), caps: 14, root: require('user-sessions').isRoot() }; // Capability bitmask: 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript, 32 = Temporary Agent, 64 = Recovery Agent
+var alertCollectionConfig = { domainTrust: false, services: [], securityUpdates: false, software: { required: [], prohibited: [] }, storageHealth: false, diskIo: false, network: { targets: [], gateway: false }, localSecurity: false };
+var alertCollectionLast = { domainTrust: 0, securityUpdates: 0, software: 0, storageHealth: 0, localSecurity: 0 };
 
 // Get the operating system description string
 try { require('os').name().then(function (v) { meshCoreObj.osdesc = v; meshCoreObjChanged(); }); } catch (ex) { }
@@ -2130,6 +2132,28 @@ function handleServerCommand(data) {
                 obj.serverInfo = data;
                 delete obj.serverInfo.action;
                 break;
+            case 'alertconfig': {
+                var config = data.config;
+                if ((config == null) || (typeof config != 'object')) break;
+                function cleanAlertConfigStrings(list) {
+                    var result = [];
+                    if (!Array.isArray(list)) return result;
+                    for (var i = 0; (i < list.length) && (result.length < 64); i++) { if ((typeof list[i] == 'string') && (list[i].length > 0) && (list[i].length <= 128)) result.push(list[i]); }
+                    return result;
+                }
+                alertCollectionConfig = {
+                    domainTrust: config.domainTrust === true,
+                    services: cleanAlertConfigStrings(config.services),
+                    securityUpdates: config.securityUpdates === true,
+                    software: { required: cleanAlertConfigStrings(config.software && config.software.required), prohibited: cleanAlertConfigStrings(config.software && config.software.prohibited) },
+                    storageHealth: config.storageHealth === true,
+                    diskIo: config.diskIo === true,
+                    network: { targets: cleanAlertConfigStrings(config.network && config.network.targets).slice(0, 8), gateway: !!(config.network && (config.network.gateway === true)) },
+                    localSecurity: config.localSecurity === true
+                };
+                sendAlertTelemetry(true);
+                break;
+            }
             case 'errorlog': // Return agent error log
                 try { mesh.SendCommand(JSON.stringify({ action: 'errorlog', log: require('util-agentlog').read(data.startTime) })); } catch (ex) { }
                 break;
@@ -2276,6 +2300,8 @@ function getSystemInformation(func) {
                     results.hardware.windows.osinfo.DomainState = getJoinState();
                 }
                 if (results.hardware.windows.partitions) { for (var i in results.hardware.windows.partitions) { delete results.hardware.windows.partitions[i].Node; } }
+                var secureBoot = require('win-info').secureBoot();
+                if (typeof secureBoot == 'boolean') { results.hardware.windows.secureBoot = secureBoot; }
             } catch (ex) { }
             if (x.LastBootUpTime) { // detect windows uptime
                 var thedate = {
@@ -2297,6 +2323,26 @@ function getSystemInformation(func) {
             }
         }
         if(results.hardware && results.hardware.linux) {
+            try {
+                var osReleaseText = require('fs').readFileSync('/etc/os-release').toString(), osRelease = {};
+                osReleaseText.split('\n').forEach(function (line) {
+                    var separator = line.indexOf('=');
+                    if (separator <= 0) return;
+                    var key = line.substring(0, separator), value = line.substring(separator + 1).trim();
+                    if ((value.length >= 2) && (((value[0] === '"') && (value[value.length - 1] === '"')) || ((value[0] === "'") && (value[value.length - 1] === "'")))) value = value.substring(1, value.length - 1);
+                    if (key === 'PRETTY_NAME') osRelease.prettyName = value;
+                    else if (key === 'ID') osRelease.id = value;
+                    else if (key === 'VERSION_ID') osRelease.versionId = value;
+                });
+                if (Object.keys(osRelease).length > 0) results.hardware.linux.osRelease = osRelease;
+            } catch (ex) { }
+            try {
+                var secureBootVariables = require('fs').readdirSync('/sys/firmware/efi/efivars').filter(function (name) { return name.indexOf('SecureBoot-') == 0; });
+                if (secureBootVariables.length > 0) {
+                    var secureBootValue = require('fs').readFileSync('/sys/firmware/efi/efivars/' + secureBootVariables[0]);
+                    if (secureBootValue.length >= 5) { results.hardware.linux.secureBoot = (secureBootValue[4] === 1); }
+                }
+            } catch (ex) { }
             if(results.hardware.linux.LastBootUpTime) {
                 var thelastbootuptime = new Date(results.hardware.linux.LastBootUpTime);
                 meshCoreObj.lastbootuptime = thelastbootuptime.getTime(); // store the last boot up time in coreinfo for columns
@@ -7531,6 +7577,10 @@ function sendPeriodicServerUpdate(flags, force) {
         if (!flags) { flags = 0xFFFFFFFF; }
         if (!force) { force = false; }
 
+        // Alert telemetry is intentionally separate from coreinfo so high-frequency
+        // samples do not churn the persisted node document.
+        sendAlertTelemetry(force);
+
         // If we have a connected MEI, get Intel ME information
         if ((flags & 1) && (amt != null) && (amt.state == 2)) {
             delete meshCoreObj.intelamt;
@@ -7617,6 +7667,109 @@ function sendPeriodicServerUpdate(flags, force) {
     } finally { sendPeriodicServerUpdateInProgress = false; }
 }
 
+function sendAlertTelemetry(force) {
+    const now = Date.now();
+    try {
+        var cpu = require('sysinfo').cpuUtilization();
+        cpu.then(function (cpuResult) {
+            try {
+                var memory = require('sysinfo').memUtilization(), thermalSource = require('sysinfo').thermals == null ? [] : require('sysinfo').thermals(), thermals = [];
+                if (Array.isArray(thermalSource)) {
+                    for (var i = 0; (i < thermalSource.length) && (thermals.length < 64); i++) {
+                        var temperature = Number(thermalSource[i] && thermalSource[i].CurrentTemperature), name = thermalSource[i] && thermalSource[i].InstanceName;
+                        if ((typeof name == 'string') && (name.length > 0) && (typeof temperature == 'number') && isFinite(temperature)) thermals.push({ name: name.substring(0, 128), temperature: temperature });
+                    }
+                }
+                var telemetry = { action: 'alerttelemetry', time: Date.now(), thermals: thermals };
+                if (cpuResult && isFinite(Number(cpuResult.total))) telemetry.cpu = { total: Number(cpuResult.total) };
+                if (memory && isFinite(Number(memory.percentConsumed))) telemetry.memory = { percentConsumed: Number(memory.percentConsumed) };
+                if (alertCollectionConfig.services.length > 0) {
+                    telemetry.services = [];
+                    for (var serviceIndex = 0; serviceIndex < alertCollectionConfig.services.length; serviceIndex++) {
+                        var serviceName = alertCollectionConfig.services[serviceIndex], running = false;
+                        try { running = require('service-manager').manager.getService(serviceName).isRunning(); } catch (ex) { }
+                        telemetry.services.push({ name: serviceName, running: running === true });
+                    }
+                }
+                mesh.SendCommand(telemetry);
+            } catch (ex) { }
+        });
+    } catch (ex) { }
+
+    if ((process.platform != 'win32') || (typeof process.env['windir'] != 'string')) return;
+    function runPowerShell(script, callback) {
+        try {
+            var output = '', child = require('child_process').execFile(process.env['windir'] + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', ['powershell', '-noprofile', '-nologo', '-noninteractive', '-command', '-'], {});
+            child.descriptorMetadata = 'MeshAlertTelemetryPowerShell';
+            child.stdout.on('data', function (chunk) { if (output.length < 65536) output += chunk.toString(); });
+            child.stderr.on('data', function () { });
+            child.stdin.write(script + '\r\nexit\r\n');
+            child.on('exit', function () { try { callback(JSON.parse(output.trim())); } catch (ex) { } });
+        } catch (ex) { }
+    }
+    function asAlertArray(value) { return Array.isArray(value) ? value : ((value != null) ? [value] : []); }
+    if (alertCollectionConfig.domainTrust && (force || ((now - alertCollectionLast.domainTrust) >= 900000))) {
+        alertCollectionLast.domainTrust = now;
+        runPowerShell("$c=Get-CimInstance Win32_ComputerSystem; if($c.PartOfDomain){$ok=Test-ComputerSecureChannel -ErrorAction SilentlyContinue; @{applicable=$true;healthy=[bool]$ok;domain=[string]$c.Domain}|ConvertTo-Json -Compress}else{@{applicable=$false}|ConvertTo-Json -Compress}", function (result) {
+            if (result && (result.applicable === true) && (typeof result.healthy == 'boolean')) mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), domainTrust: { healthy: result.healthy, domain: (typeof result.domain == 'string') ? result.domain.substring(0, 128) : '' } });
+        });
+    }
+    if (alertCollectionConfig.securityUpdates && (force || ((now - alertCollectionLast.securityUpdates) >= 21600000))) {
+        alertCollectionLast.securityUpdates = now;
+        runPowerShell("$s=New-Object -ComObject Microsoft.Update.Session; $r=$s.CreateUpdateSearcher().Search(\"IsInstalled=0 and IsHidden=0 and Type='Software'\"); $u=@($r.Updates|Where-Object{$_.MsrcSeverity -eq 'Critical' -or $_.MsrcSeverity -eq 'Important' -or $_.Categories.Name -contains 'Security Updates'}); @{pending=$u.Count;titles=@($u|Select-Object -First 10 -ExpandProperty Title)}|ConvertTo-Json -Compress -Depth 3", function (result) {
+            if (result && isFinite(Number(result.pending))) mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), securityUpdates: { pending: Number(result.pending), titles: Array.isArray(result.titles) ? result.titles : ((typeof result.titles == 'string') ? [result.titles] : []) } });
+        });
+    }
+    var softwarePatterns = alertCollectionConfig.software.required.concat(alertCollectionConfig.software.prohibited);
+    if ((softwarePatterns.length > 0) && (force || ((now - alertCollectionLast.software) >= 21600000))) {
+        alertCollectionLast.software = now;
+        try {
+            require('win-info').installedApps().then(function (apps) {
+                var installed = [], lowerPatterns = softwarePatterns.map(function (x) { return x.toLowerCase(); });
+                if (Array.isArray(apps)) {
+                    for (var appIndex = 0; (appIndex < apps.length) && (installed.length < 128); appIndex++) {
+                        var appName = apps[appIndex] && apps[appIndex].name;
+                        if ((typeof appName != 'string') || (appName.length == 0)) continue;
+                        var lowerName = appName.toLowerCase(), matched = false;
+                        for (var patternIndex = 0; patternIndex < lowerPatterns.length; patternIndex++) { if (lowerName.indexOf(lowerPatterns[patternIndex]) >= 0) { matched = true; break; } }
+                        if (matched && (installed.indexOf(appName) < 0)) installed.push(appName.substring(0, 256));
+                    }
+                }
+                mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), software: { installed: installed } });
+            });
+        } catch (ex) { }
+    }
+    if (alertCollectionConfig.storageHealth && (force || ((now - alertCollectionLast.storageHealth) >= 21600000))) {
+        alertCollectionLast.storageHealth = now;
+        runPowerShell("$d=@(Get-PhysicalDisk -ErrorAction SilentlyContinue|ForEach-Object{@{name=[string]$_.FriendlyName;healthy=($_.HealthStatus -eq 'Healthy');status=[string]($_.OperationalStatus -join ',')}}); ConvertTo-Json -InputObject $d -Compress -Depth 3", function (result) {
+            var output = [];
+            asAlertArray(result).forEach(function (disk) { if (disk && (typeof disk.name == 'string') && (typeof disk.healthy == 'boolean')) output.push({ name: disk.name.substring(0, 128), healthy: disk.healthy, status: (typeof disk.status == 'string') ? disk.status.substring(0, 128) : '' }); });
+            mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), storageHealth: output });
+        });
+    }
+    if (alertCollectionConfig.diskIo) {
+        runPowerShell("$d=@(Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -ErrorAction SilentlyContinue|Where-Object{$_.Name -ne '_Total'}|ForEach-Object{@{name=[string]$_.Name;readMs=([double]$_.AvgDisksecPerRead*1000);writeMs=([double]$_.AvgDisksecPerWrite*1000)}}); ConvertTo-Json -InputObject $d -Compress -Depth 3", function (result) {
+            var output = [];
+            asAlertArray(result).forEach(function (disk) { if (disk && isFinite(Number(disk.readMs)) && isFinite(Number(disk.writeMs))) output.push({ name: String(disk.name).substring(0, 128), readMs: Number(disk.readMs), writeMs: Number(disk.writeMs) }); });
+            mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), diskIo: output });
+        });
+    }
+    if ((alertCollectionConfig.network.targets.length > 0) || alertCollectionConfig.network.gateway) {
+        var encodedTargets = Buffer.from(JSON.stringify(alertCollectionConfig.network.targets)).toString('base64'), includeGateway = alertCollectionConfig.network.gateway ? '$true' : '$false';
+        runPowerShell("$targets=@(ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedTargets + "')))); $items=@(); if(" + includeGateway + "){$targets+=@(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue|Where-Object{$_.NextHop -ne '0.0.0.0'}|Select-Object -ExpandProperty NextHop -Unique)}; foreach($t in ($targets|Select-Object -Unique)){$ok=0;$ms=0;1..4|ForEach-Object{try{$r=(New-Object Net.NetworkInformation.Ping).Send([string]$t,1000);if($r.Status -eq 'Success'){$ok++;$ms+=$r.RoundtripTime}}catch{}};$isgw=" + includeGateway + " -and @((Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue).NextHop) -contains [string]$t;$items+=@{target=[string]$t;gateway=[bool]$isgw;reachable=($ok -gt 0);lossPercent=(100-(25*$ok));latencyMs=$(if($ok){$ms/$ok}else{0})}}; ConvertTo-Json -InputObject @($items) -Compress -Depth 3", function (result) {
+            var output = [];
+            asAlertArray(result).forEach(function (probe) { if (probe && (typeof probe.target == 'string')) output.push({ target: probe.target.substring(0, 128), gateway: probe.gateway === true, reachable: probe.reachable === true, lossPercent: Number(probe.lossPercent), latencyMs: Number(probe.latencyMs) }); });
+            mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), networkProbes: output });
+        });
+    }
+    if (alertCollectionConfig.localSecurity && (force || ((now - alertCollectionLast.localSecurity) >= 21600000))) {
+        alertCollectionLast.localSecurity = now;
+        runPowerShell("$admins=@();$accounts=@();$ports=@();try{$admins=@(Get-LocalGroupMember -SID 'S-1-5-32-544'|ForEach-Object{[string]$_.Name})}catch{};try{$accounts=@(Get-LocalUser|ForEach-Object{@{name=[string]$_.Name;enabled=[bool]$_.Enabled}})}catch{};try{$ports=@(Get-NetTCPConnection -State Listen|Select-Object -ExpandProperty LocalPort -Unique|Sort-Object)}catch{};$smb1=$false;try{$smb1=[bool](Get-SmbServerConfiguration).EnableSMB1Protocol}catch{};function Proto($p){$v=(Get-ItemProperty -Path $p -Name Enabled -ErrorAction SilentlyContinue).Enabled;return ($null -ne $v -and [int]$v -ne 0)};$tls10=Proto 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.0\\Server';$tls11=Proto 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL\\Protocols\\TLS 1.1\\Server';$lm=(Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' -Name LmCompatibilityLevel -ErrorAction SilentlyContinue).LmCompatibilityLevel;$ntlmv1=($null -ne $lm -and [int]$lm -lt 3);$rdp=((Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server' -Name fDenyTSConnections -ErrorAction SilentlyContinue).fDenyTSConnections -eq 0 -and $ports -contains 3389);$ssh=($ports -contains 22);$cfg=Join-Path $env:TEMP ('mcalert-'+[guid]::NewGuid()+'.inf');$min=0;$age=0;$lock=0;try{secedit /export /cfg $cfg /quiet|Out-Null;foreach($line in (Get-Content $cfg)){if($line -match '^MinimumPasswordLength\\s*=\\s*(\\d+)'){$min=[int]$Matches[1]};if($line -match '^MaximumPasswordAge\\s*=\\s*(\\d+)'){$age=[int]$Matches[1]};if($line -match '^LockoutBadCount\\s*=\\s*(\\d+)'){$lock=[int]$Matches[1]}}}catch{}finally{Remove-Item $cfg -Force -ErrorAction SilentlyContinue};@{administrators=$admins;accounts=$accounts;listeningPorts=$ports;protocols=@{smb1=$smb1;tls10=$tls10;tls11=$tls11;ntlmv1=$ntlmv1};remoteAccess=@{rdp=[bool]$rdp;ssh=[bool]$ssh};passwordPolicy=@{minimumLength=$min;maximumAgeDays=$age;lockoutThreshold=$lock}}|ConvertTo-Json -Compress -Depth 5", function (result) {
+            if (result) mesh.SendCommand({ action: 'alerttelemetry', time: Date.now(), localSecurity: result });
+        });
+    }
+}
+
 // Sort the names in an object
 function sortObject(obj) { return Object.keys(obj).sort().reduce(function(a, v) { a[v] = obj[v]; return a; }, {}); }
 
@@ -7630,9 +7783,6 @@ function cleanGetBitLockerVolumeInfo(volumes) {
         if (v.identifier == '') { delete v.identifier; }
         if (v.name == '') { delete v.name; }
         if (v.recoveryPassword == '') { delete v.recoveryPassword; }
-        if (v.volumeStatus === 0) { delete v.volumeStatus; }
-        if (v.encryptionMethod === 0) { delete v.encryptionMethod; }
-        if (v.protectionStatus === 0) { delete v.protectionStatus; }
     }
     return sortObject(volumes);
 }

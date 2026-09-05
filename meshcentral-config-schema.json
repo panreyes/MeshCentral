@@ -899,6 +899,575 @@
             "apiKey"
           ]
         },
+        "alerts": {
+          "type": "object",
+          "description": "Settings for device health alerts and notification reminders.",
+          "properties": {
+            "reminderIntervalHours": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 8760,
+              "default": 24,
+              "description": "Deprecated compatibility setting. Set to 0 to disable daily reminders; positive values use reminderTime."
+            },
+            "reminderTime": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "default": "10:00",
+              "description": "Local server time at which the single daily reminder for active alerts is sent."
+            },
+            "diskSpace": {
+              "type": "object",
+              "description": "Thresholds for low disk space alerts generated from agent system information.",
+              "properties": {
+                "warningPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "exclusiveMaximum": true,
+                  "default": 15,
+                  "description": "Open a low disk space alert when the percentage free is below this value. Set to 0 to disable new alerts."
+                },
+                "recoveryPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMinimum": true,
+                  "maximum": 100,
+                  "default": 20,
+                  "description": "Resolve a low disk space alert when the percentage free reaches this value. This must be greater than warningPercent."
+                }
+              }
+            },
+            "battery": {
+              "type": "object",
+              "description": "Battery wear thresholds calculated from full-charge and design capacity.",
+              "properties": {
+                "warningPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "exclusiveMaximum": true,
+                  "default": 70,
+                  "description": "Open a battery health alert below this percentage."
+                },
+                "recoveryPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMinimum": true,
+                  "maximum": 100,
+                  "default": 80,
+                  "description": "Resolve a battery health alert at or above this percentage. This must be greater than warningPercent."
+                }
+              }
+            },
+            "batteryCycles": {
+              "type": "object",
+              "description": "Battery charge-cycle alert settings.",
+              "properties": {
+                "warningCycles": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100000,
+                  "default": 800,
+                  "description": "Open an alert when a battery reaches this cycle count. Set to 0 to disable new alerts."
+                }
+              }
+            },
+            "lowInstalledMemory": {
+              "type": "object",
+              "description": "Optional minimum installed memory requirements. A value of 0 or an omitted value disables that requirement.",
+              "properties": {
+                "minimumGigabytes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1048576,
+                  "default": 0,
+                  "description": "Default minimum installed memory in GiB for all platforms."
+                },
+                "minimumWindowsGigabytes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1048576,
+                  "description": "Windows-specific minimum installed memory in GiB."
+                },
+                "minimumLinuxGigabytes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1048576,
+                  "description": "Linux-specific minimum installed memory in GiB."
+                },
+                "minimumDarwinGigabytes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1048576,
+                  "description": "macOS-specific minimum installed memory in GiB."
+                }
+              }
+            },
+            "legacyBootMode": {
+              "type": "object",
+              "description": "Boot-mode compliance alert settings.",
+              "properties": {
+                "requireUefi": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Require devices with explicit boot-mode inventory to use UEFI instead of legacy BIOS."
+                }
+              }
+            },
+            "identityChanged": {
+              "type": "object",
+              "description": "High-severity device identity change event settings.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Emit an event when an explicitly reported product, board, BIOS or chassis identifier changes."
+                }
+              }
+            },
+            "connectionFlapping": {
+              "type": "object",
+              "description": "Agent connection stability alert settings.",
+              "properties": {
+                "windowMinutes": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 1440,
+                  "default": 10,
+                  "description": "Sliding window used to count agent connection changes."
+                },
+                "transitionCount": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 1000,
+                  "default": 6,
+                  "description": "Open an alert after this many agent connect or disconnect transitions within the window."
+                },
+                "recoveryMinutes": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 1440,
+                  "default": 30,
+                  "description": "Resolve the alert after no agent connection transition has occurred for this many minutes."
+                }
+              }
+            },
+            "offlineTooLong": {
+              "type": "object",
+              "description": "Alert when a MeshAgent remains disconnected for a sustained period.",
+              "properties": {
+                "hours": { "type": "number", "minimum": 0, "maximum": 87600, "default": 24, "description": "Hours offline before opening the alert. Set to 0 to disable it." }
+              }
+            },
+            "rebootLoop": {
+              "type": "object",
+              "description": "Detect repeated changes to the reported system boot time.",
+              "properties": {
+                "windowMinutes": { "type": "number", "minimum": 1, "maximum": 10080, "default": 60, "description": "Sliding window in which reboots are counted." },
+                "rebootCount": { "type": "integer", "minimum": 2, "maximum": 100, "default": 3, "description": "Number of reboots in the window that opens the alert." },
+                "recoveryMinutes": { "type": "number", "minimum": 1, "maximum": 43200, "default": 120, "description": "Quiet period without a reboot that resolves the alert." }
+              }
+            },
+            "encryptionStalled": {
+              "type": "object",
+              "description": "Detect a Windows BitLocker conversion state that remains unchanged.",
+              "properties": {
+                "hours": { "type": "number", "minimum": 0, "maximum": 87600, "default": 24, "description": "Hours in one conversion state before opening the alert. Set to 0 to disable it." }
+              }
+            },
+            "incompleteIdentifiers": {
+              "type": "object",
+              "description": "Require explicit, non-placeholder product, board and chassis identifiers.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable hardware identifier completeness checks." }
+              }
+            },
+            "virtualization": {
+              "type": "object",
+              "description": "Optional physical or virtual device policy.",
+              "properties": {
+                "expected": { "type": "string", "enum": ["any", "physical", "virtual"], "default": "any", "description": "Required device type. Any disables the check." }
+              }
+            },
+            "hardwareRequirements": {
+              "type": "object",
+              "description": "Optional minimum memory, storage and processor architecture requirements.",
+              "properties": {
+                "minimumMemoryGigabytes": { "type": "number", "minimum": 0, "maximum": 1048576, "default": 0, "description": "Minimum installed memory in GiB. Zero disables this requirement." },
+                "minimumStorageGigabytes": { "type": "number", "minimum": 0, "maximum": 1073741824, "default": 0, "description": "Minimum total reported fixed storage in GiB. Zero disables this requirement." },
+                "allowedArchitectures": { "type": "array", "uniqueItems": true, "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 64 }, "default": [], "description": "Case-insensitive architecture fragments that are allowed." }
+              }
+            },
+            "osEdition": {
+              "type": "object",
+              "description": "Optional allowlists for operating system edition descriptions.",
+              "properties": {
+                "allowedWindows": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] },
+                "allowedLinux": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] },
+                "allowedDarwin": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] }
+              }
+            },
+            "networkConfigurationChanged": {
+              "type": "object",
+              "description": "Emit an event when stable interface, address or gateway data changes.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Enable network configuration change events." }
+              }
+            },
+            "duplicateNetworkIdentity": {
+              "type": "object",
+              "description": "Detect a MAC address reported by more than one device in a domain.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true, "description": "Enable duplicate MAC address checks." }
+              }
+            },
+            "agentVersion": {
+              "type": "object",
+              "description": "Optional minimum MeshAgent numeric version.",
+              "properties": {
+                "minimum": { "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0, "description": "Minimum accepted agent version. Zero disables the check." }
+              }
+            },
+            "pendingRebootTooLong": {
+              "type": "object",
+              "description": "Alert when an explicit pending-reboot condition remains active.",
+              "properties": {
+                "days": { "type": "number", "minimum": 0, "maximum": 36500, "default": 3, "description": "Days a reboot may remain pending. Zero disables the duration check." }
+              }
+            },
+            "inventoryStale": {
+              "type": "object",
+              "description": "Alert when a connected agent stops checking its system inventory.",
+              "properties": {
+                "hours": { "type": "number", "minimum": 0, "maximum": 87600, "default": 24, "description": "Maximum time between inventory checks. Zero disables the check." }
+              }
+            },
+            "osEndOfLife": {
+              "type": "object",
+              "description": "Configurable operating-system support lifecycle rules.",
+              "properties": {
+                "rules": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "default": [],
+                  "items": {
+                    "type": "object",
+                    "required": ["platform", "match", "endOfLife"],
+                    "properties": {
+                      "platform": { "type": "string", "enum": ["windows", "linux", "darwin"] },
+                      "match": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Case-insensitive fragment matched against the reported operating system description and version." },
+                      "endOfLife": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "End-of-support date in YYYY-MM-DD format." },
+                      "warningDays": { "type": "number", "minimum": 0, "maximum": 36500, "default": 90 }
+                    }
+                  }
+                }
+              }
+            },
+            "missingRecoveryKey": {
+              "type": "object",
+              "description": "Require a stored recovery password for fully protected BitLocker volumes.",
+              "properties": {
+                "required": { "type": "boolean", "default": false, "description": "Open an alert for protected volumes without a stored recovery password." }
+              }
+            },
+            "duplicateHardwareIdentity": {
+              "type": "object",
+              "description": "Detect product UUID, board serial or chassis serial values reported by more than one device.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": true }
+              }
+            },
+            "agentPrivilege": {
+              "type": "object",
+              "description": "Optional requirement for MeshAgent to run with administrative privileges.",
+              "properties": {
+                "required": { "type": "boolean", "default": false }
+              }
+            },
+            "removableStorageDetected": {
+              "type": "object",
+              "description": "Emit an event when Windows reports a newly attached removable volume.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false }
+              }
+            },
+            "dnsCompliance": {
+              "type": "object",
+              "description": "Optional allowlist of DNS server addresses reported by the agent.",
+              "properties": {
+                "allowedServers": { "type": "array", "uniqueItems": true, "maxItems": 128, "items": { "type": "string", "minLength": 1, "maxLength": 255 }, "default": [] }
+              }
+            },
+            "diskExhaustionForecast": {
+              "type": "object",
+              "description": "Predict disk exhaustion from persisted free-space samples.",
+              "properties": {
+                "horizonDays": { "type": "number", "minimum": 0, "maximum": 36500, "default": 0, "description": "Open an alert when projected exhaustion is within this many days. Zero disables forecasting." },
+                "recoveryDays": { "type": "number", "minimum": 0, "maximum": 36500, "default": 30, "description": "Resolve after the projection moves beyond this many days." },
+                "minimumSpanHours": { "type": "number", "exclusiveMinimum": 0, "maximum": 8760, "default": 6, "description": "Minimum time covered by samples before calculating a forecast." },
+                "minimumSamples": { "type": "integer", "minimum": 2, "maximum": 50, "default": 3 }
+              }
+            },
+            "secureBoot": {
+              "type": "object",
+              "description": "Optional requirement for explicitly reported Secure Boot state.",
+              "properties": {
+                "required": { "type": "boolean", "default": false }
+              }
+            },
+            "sustainedCpuLoad": {
+              "type": "object",
+              "description": "Sustained processor utilization thresholds evaluated from periodic agent telemetry.",
+              "properties": {
+                "warningPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 90 },
+                "recoveryPercent": { "type": "number", "minimum": 0, "exclusiveMaximum": 100, "default": 70 },
+                "durationMinutes": { "type": "number", "exclusiveMinimum": 0, "maximum": 10080, "default": 15 }
+              }
+            },
+            "sustainedMemoryPressure": {
+              "type": "object",
+              "description": "Sustained memory utilization thresholds evaluated from periodic agent telemetry.",
+              "properties": {
+                "warningPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 90 },
+                "recoveryPercent": { "type": "number", "minimum": 0, "exclusiveMaximum": 100, "default": 80 },
+                "durationMinutes": { "type": "number", "exclusiveMinimum": 0, "maximum": 10080, "default": 15 }
+              }
+            },
+            "highTemperature": {
+              "type": "object",
+              "description": "Temperature thresholds and debounce count for reported thermal sensors.",
+              "properties": {
+                "warningCelsius": { "type": "number", "exclusiveMinimum": 0, "maximum": 200, "default": 85 },
+                "recoveryCelsius": { "type": "number", "minimum": -50, "maximum": 200, "default": 75 },
+                "consecutiveSamples": { "type": "integer", "minimum": 1, "maximum": 100, "default": 3 }
+              }
+            },
+            "criticalBatteryCharge": {
+              "type": "object",
+              "description": "Battery charge thresholds used while a battery is explicitly discharging.",
+              "properties": {
+                "warningPercent": { "type": "number", "minimum": 0, "exclusiveMaximum": 100, "default": 10 },
+                "recoveryPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 20 }
+              }
+            },
+            "domainTrustFailure": {
+              "type": "object",
+              "description": "Verify the Windows domain secure channel. The collector is disabled by default.",
+              "properties": { "enabled": { "type": "boolean", "default": false } }
+            },
+            "linkSpeedDegraded": {
+              "type": "object",
+              "description": "Detect a negotiated network speed substantially below the learned maximum for an interface.",
+              "properties": {
+                "ratioPercent": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 100, "default": 50 },
+                "recoveryPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 80 },
+                "minimumBaselineMbps": { "type": "number", "minimum": 0, "maximum": 10000000, "default": 100 }
+              }
+            },
+            "clockDrift": {
+              "type": "object",
+              "description": "Maximum tolerated difference between the device and server clocks.",
+              "properties": {
+                "warningSeconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 31536000, "default": 300 },
+                "recoverySeconds": { "type": "number", "minimum": 0, "maximum": 31536000, "default": 120 }
+              }
+            },
+            "criticalServiceStopped": {
+              "type": "object",
+              "description": "Service names whose running state the agent must monitor. An empty list disables collection.",
+              "properties": {
+                "services": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] }
+              }
+            },
+            "missingSecurityUpdates": {
+              "type": "object",
+              "description": "Ask Windows Update for pending Critical, Important and Security updates. Disabled by default because the scan can be expensive.",
+              "properties": { "enabled": { "type": "boolean", "default": false } }
+            },
+            "softwarePolicy": {
+              "type": "object",
+              "description": "Required and prohibited case-insensitive application name fragments. Empty lists disable inventory collection.",
+              "properties": {
+                "required": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] },
+                "prohibited": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] }
+              }
+            },
+            "smartDiskFailure": {
+              "type": "object",
+              "description": "Query Windows physical-disk health. Disabled by default because hardware support varies.",
+              "properties": { "enabled": { "type": "boolean", "default": false } }
+            },
+            "diskIoLatency": {
+              "type": "object",
+              "description": "Monitor sustained Windows physical-disk read and write latency.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "warningMilliseconds": { "type": "number", "exclusiveMinimum": 0, "maximum": 60000, "default": 50 },
+                "recoveryMilliseconds": { "type": "number", "minimum": 0, "maximum": 60000, "default": 20 },
+                "consecutiveSamples": { "type": "integer", "minimum": 1, "maximum": 100, "default": 3 }
+              }
+            },
+            "networkPacketLoss": {
+              "type": "object",
+              "description": "Measure packet loss to up to eight configured IP addresses or host names.",
+              "properties": {
+                "targets": { "type": "array", "uniqueItems": true, "maxItems": 8, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] },
+                "warningPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "default": 25 },
+                "recoveryPercent": { "type": "number", "minimum": 0, "exclusiveMaximum": 100, "default": 5 }
+              }
+            },
+            "gatewayUnreachable": {
+              "type": "object",
+              "description": "Probe the preferred IPv4 gateway from the managed device.",
+              "properties": { "enabled": { "type": "boolean", "default": false } }
+            },
+            "unexpectedLocalAdministrator": {
+              "type": "object",
+              "description": "Allowlist of Windows local administrator member names.",
+              "properties": { "allowed": { "type": "array", "uniqueItems": true, "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 }, "default": [] } }
+            },
+            "insecureProtocolEnabled": {
+              "type": "object",
+              "description": "Explicit legacy protocols to check on Windows.",
+              "properties": { "check": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": ["smb1", "tls10", "tls11", "ntlmv1"] }, "default": [] } }
+            },
+            "unexpectedListeningPort": {
+              "type": "object",
+              "description": "Allowlist for locally listening Windows TCP ports.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "allowedPorts": { "type": "array", "uniqueItems": true, "maxItems": 1024, "items": { "type": "integer", "minimum": 1, "maximum": 65535 }, "default": [] }
+              }
+            },
+            "remoteDesktopExposed": {
+              "type": "object",
+              "description": "Policy for RDP and SSH listeners on Windows devices.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "allowRdp": { "type": "boolean", "default": true },
+                "allowSsh": { "type": "boolean", "default": true }
+              }
+            },
+            "passwordPolicy": {
+              "type": "object",
+              "description": "Minimum Windows local password and lockout policy.",
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "minimumLength": { "type": "integer", "minimum": 0, "maximum": 128, "default": 12 },
+                "maximumAgeDays": { "type": "integer", "minimum": 0, "maximum": 999, "default": 90 },
+                "lockoutThreshold": { "type": "integer", "minimum": 0, "maximum": 999, "default": 10 }
+              }
+            },
+            "localAccountChanged": {
+              "type": "object",
+              "description": "Emit events when the Windows local-account inventory changes.",
+              "properties": { "enabled": { "type": "boolean", "default": false } }
+            },
+            "excessiveUptime": {
+              "type": "object",
+              "description": "Thresholds for excessive device uptime.",
+              "properties": {
+                "warningDays": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 36500,
+                  "default": 30,
+                  "description": "Open an alert when uptime reaches this many days. Set to 0 to disable new alerts."
+                },
+                "recoveryDays": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 36500,
+                  "default": 25,
+                  "description": "Resolve an uptime alert at or below this many days. This must be lower than warningDays."
+                }
+              }
+            },
+            "diskEncryption": {
+              "type": "object",
+              "description": "Windows BitLocker compliance alert settings.",
+              "properties": {
+                "required": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Require fixed Windows volumes to be fully encrypted and protected."
+                }
+              }
+            },
+            "tpm": {
+              "type": "object",
+              "description": "Trusted Platform Module compliance alert settings.",
+              "properties": {
+                "required": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Require a TPM that is activated, enabled and owned."
+                },
+                "minimumVersion": {
+                  "type": "string",
+                  "default": "2.0",
+                  "description": "Minimum TPM specification version when TPM compliance is required."
+                }
+              }
+            },
+            "osBuild": {
+              "type": "object",
+              "description": "Optional minimum operating system versions. An omitted platform has no requirement.",
+              "properties": {
+                "minimumWindowsBuild": {
+                  "type": "string",
+                  "description": "Minimum accepted Windows build or build revision."
+                },
+                "minimumLinuxKernel": {
+                  "type": "string",
+                  "description": "Minimum accepted Linux kernel release."
+                }
+              }
+            },
+            "domainMembership": {
+              "type": "object",
+              "description": "Windows domain membership compliance settings.",
+              "properties": {
+                "required": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Require Windows devices to be joined to a domain."
+                },
+                "allowedDomains": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": { "type": "string" },
+                  "description": "Optional case-insensitive list of accepted Windows domain names."
+                }
+              }
+            },
+            "biosAge": {
+              "type": "object",
+              "description": "BIOS or firmware age alert settings.",
+              "properties": {
+                "warningDays": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 36500,
+                  "default": 1825,
+                  "description": "Open an alert when firmware is at least this many days old. Set to 0 to disable new alerts."
+                }
+              }
+            },
+            "hardwareChanged": {
+              "type": "object",
+              "description": "Hardware inventory change event settings.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Emit an event when stable system, GPU, storage, memory or TPM inventory changes."
+                }
+              }
+            }
+          }
+        },
         "autoBackup": {
           "type": [
             "boolean",
@@ -4533,6 +5102,15 @@
             "session": {
               "type": "string",
               "description": "Path to the Telegram session file"
+            },
+            "bottoken": {
+              "type": "string",
+              "description": "Telegram bot token generated by BotFather"
+            },
+            "botapi": {
+              "type": "boolean",
+              "default": false,
+              "description": "Use the Telegram HTTPS Bot API instead of a direct MTProto connection. Users must send /start to the bot before verifying their handle."
             },
             "useWSS": {
               "type": "boolean",

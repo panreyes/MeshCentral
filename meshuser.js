@@ -368,6 +368,19 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
         return true;
     }
 
+    // Remove events that require a device right the current user no longer has.
+    function filterEventsByRequiredRight(events, nodeContext) {
+        if (!Array.isArray(events)) return events;
+        return events.filter(function (event) {
+            if ((typeof event.requiredRight !== 'number') || (event.requiredRight === 0)) return true;
+            const meshid = (typeof event.meshid === 'string') ? event.meshid : ((nodeContext != null) ? nodeContext.meshid : null);
+            const nodeid = (typeof event.nodeid === 'string') ? event.nodeid : ((nodeContext != null) ? nodeContext.nodeid : null);
+            if ((typeof meshid !== 'string') || (typeof nodeid !== 'string')) return false;
+            const rights = ((nodeContext != null) && (nodeContext.meshid === meshid) && (nodeContext.nodeid === nodeid)) ? nodeContext.rights : parent.GetNodeRights(user, meshid, nodeid);
+            return (rights === MESHRIGHT_ADMIN) || ((rights & event.requiredRight) !== 0);
+        });
+    }
+
     // Route a command to all targets in a mesh
     function routeCommandToMesh(meshid, command) {
         // If we have peer servers, inform them of this command to send to all agents of this device group
@@ -433,6 +446,12 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
 
                 // If this user is not viewing all devices and paging, check if this event is in the current page
                 if (isEventWithinPage(ids) == false) return;
+
+                if ((typeof event === 'object') && (typeof event.requiredRight === 'number') && (event.requiredRight !== 0)) {
+                    if ((typeof event.meshid !== 'string') || (typeof event.nodeid !== 'string')) return;
+                    const eventRights = parent.GetNodeRights(user, event.meshid, event.nodeid);
+                    if ((eventRights !== MESHRIGHT_ADMIN) && ((eventRights & event.requiredRight) === 0)) return;
+                }
 
                 // Normally, only allow this user to receive messages from it's own domain.
                 // If the user is a cross domain administrator, allow some select messages from different domains.
@@ -1113,13 +1132,13 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                             // Send the list of all events for this session
                             db.GetUserEvents(filter, domain.id, command.userid, actionfilter, function (err, docs) {
                                 if (err != null) return;
-                                try { ws.send(JSON.stringify({ action: 'events', events: docs, userid: command.userid, tag: command.tag })); } catch (ex) { }
+                                try { ws.send(JSON.stringify({ action: 'events', events: filterEventsByRequiredRight(docs), userid: command.userid, tag: command.tag })); } catch (ex) { }
                             });
                         } else {
                             // Send the list of most recent events for this session, up to 'limit' count
                             db.GetUserEventsWithLimit(filter, domain.id, command.userid, command.limit, actionfilter, function (err, docs) {
                                 if (err != null) return;
-                                try { ws.send(JSON.stringify({ action: 'events', events: docs, userid: command.userid, tag: command.tag })); } catch (ex) { }
+                                try { ws.send(JSON.stringify({ action: 'events', events: filterEventsByRequiredRight(docs), userid: command.userid, tag: command.tag })); } catch (ex) { }
                             });
                         }
                     } else if (command.nodeid != null) { // Device filtered events
@@ -1145,13 +1164,13 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                                 // Send the list of most recent events for this nodeid that only apply to us, up to 'limit' count
                                 db.GetNodeEventsSelfWithLimit(node._id, domain.id, user._id, limit, filter, function (err, docs) {
                                     if (err != null) return;
-                                    try { ws.send(JSON.stringify({ action: 'events', events: docs, nodeid: node._id, tag: command.tag })); } catch (ex) { }
+                                    try { ws.send(JSON.stringify({ action: 'events', events: filterEventsByRequiredRight(docs, { meshid: node.meshid, nodeid: node._id, rights: rights }), nodeid: node._id, tag: command.tag })); } catch (ex) { }
                                 });
                             } else {
                                 // Send the list of most recent events for this nodeid, up to 'limit' count
                                 db.GetNodeEventsWithLimit(node._id, domain.id, limit, filter, function (err, docs) {
                                     if (err != null) return;
-                                    try { ws.send(JSON.stringify({ action: 'events', events: docs, nodeid: node._id, tag: command.tag })); } catch (ex) { }
+                                    try { ws.send(JSON.stringify({ action: 'events', events: filterEventsByRequiredRight(docs, { meshid: node.meshid, nodeid: node._id, rights: rights }), nodeid: node._id, tag: command.tag })); } catch (ex) { }
                                 });
                             }
                         });
@@ -1178,13 +1197,13 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                             // Send the list of all events for this session
                             db.GetEvents(filter, domain.id, actionfilter, function (err, docs) {
                                 if (err != null) return;
-                                try { ws.send(JSON.stringify({ action: 'events', events: docs, user: command.user, tag: command.tag })); } catch (ex) { }
+                                try { ws.send(JSON.stringify({ action: 'events', events: filterEventsByRequiredRight(docs), user: command.user, tag: command.tag })); } catch (ex) { }
                             });
                         } else {
                             // Send the list of most recent events for this session, up to 'limit' count
                             db.GetEventsWithLimit(filter, domain.id, command.limit, actionfilter, function (err, docs) {
                                 if (err != null) return;
-                                try { ws.send(JSON.stringify({ action: 'events', events: docs, user: command.user, tag: command.tag })); } catch (ex) { }
+                                try { ws.send(JSON.stringify({ action: 'events', events: filterEventsByRequiredRight(docs), user: command.user, tag: command.tag })); } catch (ex) { }
                             });
                         }
                     }
@@ -1822,9 +1841,86 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                     }
                     break;
                 }
+            case 'getnotificationpolicy':
+                {
+                    if (parent.parent.alerts == null) break;
+                    parent.parent.alerts.getClientPolicy(user, function (response) {
+                        if (command.responseid != null) response.responseid = command.responseid;
+                        try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                    });
+                    break;
+                }
+            case 'getdevicealerts':
+                {
+                    const response = { action: 'getdevicealerts', nodeid: command.nodeid, alerts: [] };
+                    if (command.responseid != null) response.responseid = command.responseid;
+                    if ((parent.parent.alerts == null) || (common.validateString(command.nodeid, 1, 1024) == false)) {
+                        response.result = 'Invalid device id';
+                        try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                        break;
+                    }
+                    parent.GetNodeWithRights(domain, user, command.nodeid, function (node, rights, visible) {
+                        if ((node == null) || (visible !== true) || ((rights !== MESHRIGHT_ADMIN) && ((rights & MESHRIGHT_DEVICEDETAILS) === 0))) {
+                            response.result = 'Access denied';
+                        } else {
+                            response.alerts = parent.parent.alerts.getDeviceChecks(node._id, rights);
+                            response.result = 'ok';
+                        }
+                        try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                    });
+                    break;
+                }
+            case 'setnotificationrule':
+                {
+                    if (parent.parent.alerts == null) break;
+                    if ((user.siteadmin != 0xFFFFFFFF) && ((user.siteadmin & 1024) != 0)) break;
+                    const finishRuleChange = function (err) {
+                        const response = { action: 'setnotificationrule', result: err || 'ok' };
+                        if (command.responseid != null) response.responseid = command.responseid;
+                        try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                        if (err == null) { parent.parent.alerts.getClientPolicy(user, function (policy) { try { ws.send(JSON.stringify(policy)); } catch (ex) { } }); }
+                    };
+                    const ruleChange = { scope: command.scope, scopeId: command.scopeid, alertType: command.alerttype, channels: command.channels };
+                    const definition = parent.parent.alerts.catalog[ruleChange.alertType];
+                    if (definition == null) { finishRuleChange('Invalid alert type'); break; }
+                    if (ruleChange.scope === 'account') {
+                        parent.parent.alerts.setRule(user, ruleChange, finishRuleChange);
+                    } else if (ruleChange.scope === 'mesh') {
+                        if ((typeof ruleChange.scopeId !== 'string') || (parent.IsMeshViewable(user, ruleChange.scopeId) == false)) { finishRuleChange('Access denied'); break; }
+                        parent.parent.alerts.setRule(user, ruleChange, finishRuleChange);
+                    } else if (ruleChange.scope === 'node') {
+                        parent.GetNodeWithRights(domain, user, ruleChange.scopeId, function (node, rights, visible) {
+                            if ((node == null) || (visible !== true) || ((definition.requiredRight !== 0) && (rights !== MESHRIGHT_ADMIN) && ((rights & definition.requiredRight) === 0))) { finishRuleChange('Access denied'); return; }
+                            parent.parent.alerts.setRule(user, ruleChange, finishRuleChange);
+                        });
+                    } else { finishRuleChange('Invalid scope'); }
+                    break;
+                }
+            case 'setnotificationignore':
+                {
+                    if (parent.parent.alerts == null) break;
+                    if ((user.siteadmin != 0xFFFFFFFF) && ((user.siteadmin & 1024) != 0)) break;
+                    const definition = parent.parent.alerts.catalog[command.alerttype];
+                    const finishIgnoreChange = function (err) {
+                        const response = { action: 'setnotificationignore', result: err || 'ok' };
+                        if (command.responseid != null) response.responseid = command.responseid;
+                        try { ws.send(JSON.stringify(response)); } catch (ex) { }
+                        if (err == null) { parent.parent.alerts.getClientPolicy(user, function (policy) { try { ws.send(JSON.stringify(policy)); } catch (ex) { } }); }
+                    };
+                    if ((definition == null) || (definition.kind !== 'state') || (definition.ignorable !== true) || (typeof command.ignored !== 'boolean')) { finishIgnoreChange('Invalid alert'); break; }
+                    parent.GetNodeWithRights(domain, user, command.nodeid, function (node, rights, visible) {
+                        if ((node == null) || (visible !== true) || (rights !== MESHRIGHT_ADMIN && ((rights & definition.requiredRight) === 0))) { finishIgnoreChange('Access denied'); return; }
+                        parent.parent.alerts.setIgnored(user, command.nodeid, node.meshid, command.alerttype, command.ignored, finishIgnoreChange);
+                    });
+                    break;
+                }
             case 'changemeshnotify':
                 {
                     if ((user.siteadmin != 0xFFFFFFFF) && ((user.siteadmin & 1024) != 0)) return; // If this account is settings locked, return here.
+                    if ((parent.parent.alerts != null) && (parent.parent.alerts.getPolicy(user._id) != null)) {
+                        if (command.responseid != null) { try { ws.send(JSON.stringify({ action: 'changemeshnotify', responseid: command.responseid, result: 'Notification policy is active' })); } catch (ex) { } }
+                        break;
+                    }
 
                     //   2 = WebPage device connections
                     //   4 = WebPage device disconnections
@@ -1878,6 +1974,10 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
             case 'changeusernotify':
                 {
                     if ((user.siteadmin != 0xFFFFFFFF) && ((user.siteadmin & 1024) != 0)) return; // If this account is settings locked, return here.
+                    if ((parent.parent.alerts != null) && (parent.parent.alerts.getPolicy(user._id) != null)) {
+                        if (command.responseid != null) { try { ws.send(JSON.stringify({ action: 'changeusernotify', responseid: command.responseid, result: 'Notification policy is active' })); } catch (ex) { } }
+                        break;
+                    }
 
                     //   2 = WebPage device connections
                     //   4 = WebPage device disconnections
@@ -4169,6 +4269,13 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                 if (common.validateString(command.state, 1, 30000) == false) break; // Check state size, no more than 30k
                 command.state = parent.filterUserWebState(command.state); // Filter the state to remove anything bad
                 if ((command.state == null) || (typeof command.state !== 'string')) break; // If state did not validate correctly, quit here.
+                if ((parent.parent.alerts != null) && (parent.parent.alerts.getPolicy(user._id) != null)) {
+                    try {
+                        const webState = JSON.parse(command.state);
+                        if (typeof webState.notifications === 'number') webState.notifications &= 17;
+                        command.state = JSON.stringify(webState);
+                    } catch (ex) { break; }
+                }
                 command.domain = domain.id;
                 db.Set({ _id: 'ws' + user._id, state: command.state });
                 parent.parent.DispatchEvent([user._id], obj, { action: 'userWebState', nolog: 1, domain: domain.id, state: command.state });
@@ -7338,7 +7445,7 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
 
         // Setup the handle for the right messaging service
         var handle = null;
-        if ((command.service == 1) && ((parent.parent.msgserver.providers & 1) != 0)) { handle = 'telegram:@' + command.handle; }
+        if ((command.service == 1) && ((parent.parent.msgserver.providers & 1) != 0)) { handle = parent.parent.msgserver.normalizeTelegramHandle(command.handle); }
         if ((command.service == 4) && ((parent.parent.msgserver.providers & 4) != 0)) { handle = 'discord:' + command.handle; }
         if ((command.service == 8) && ((parent.parent.msgserver.providers & 8) != 0)) { handle = 'xmpp:' + command.handle; }
         if ((command.service == 16) && ((parent.parent.msgserver.providers & 16) != 0)) { handle = parent.parent.msgserver.callmebotUrlToHandle(command.handle); }
@@ -7350,8 +7457,9 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
 
         // Send a verification message
         const code = common.zeroPad(getRandomSixDigitInteger(), 6);
-        const messagingCookie = parent.parent.encodeCookie({ a: 'verifyMessaging', c: code, p: handle, s: ws.sessionId });
-        parent.parent.msgserver.sendMessagingCheck(domain, handle, code, parent.getLanguageCodes(req), function (success) {
+        parent.parent.msgserver.sendMessagingCheck(domain, handle, code, parent.getLanguageCodes(req), function (success, canonicalHandle) {
+            if ((success !== true) || (typeof canonicalHandle !== 'string')) canonicalHandle = handle;
+            const messagingCookie = parent.parent.encodeCookie({ a: 'verifyMessaging', c: code, p: canonicalHandle, s: ws.sessionId });
             ws.send(JSON.stringify({ action: 'verifyMessaging', cookie: messagingCookie, success: success }));
         });
     }

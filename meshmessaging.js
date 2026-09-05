@@ -27,8 +27,7 @@
 // For Telegram bot login, add this in config.json
 "messaging": {
   "telegram": {
-    "apiid": 00000000,
-    "apihash": "00000000000000000000000",
+    "botapi": true,
     "bottoken": "00000000:aaaaaaaaaaaaaaaaaaaaaaaa"
   }
 }
@@ -116,12 +115,37 @@
 
 */
 
+function findTelegramBotChat(updates, username) {
+    if (!Array.isArray(updates) || (typeof username !== 'string')) return null;
+    const normalizedUsername = username.startsWith('@') ? username.substring(1).toLowerCase() : username.toLowerCase();
+    for (var i = updates.length - 1; i >= 0; i--) {
+        const telegramMessage = updates[i] && updates[i].message;
+        if ((telegramMessage == null) || (telegramMessage.chat == null) || (telegramMessage.chat.type !== 'private')) continue;
+        const senderUsername = telegramMessage.from && telegramMessage.from.username;
+        if ((typeof senderUsername === 'string') && (senderUsername.toLowerCase() === normalizedUsername)) return String(telegramMessage.chat.id);
+    }
+    return null;
+}
+
+function normalizeTelegramHandle(handle) {
+    if (typeof handle !== 'string') return null;
+    handle = handle.trim();
+    if (handle.startsWith('@')) handle = handle.substring(1);
+    if (/^-?[0-9]+$/.test(handle)) return 'telegram:' + handle;
+    if (/^[A-Za-z0-9_]{5,32}$/.test(handle)) return 'telegram:@' + handle;
+    return null;
+}
+
+module.exports._test = { findTelegramBotChat: findTelegramBotChat, normalizeTelegramHandle: normalizeTelegramHandle };
+
 // Construct a messaging server object
 module.exports.CreateServer = function (parent) {
     var obj = {};
     obj.parent = parent;
     obj.providers = 0; // 1 = Telegram, 2 = Signal, 4 = Discord, 8 = XMPP, 16 = CallMeBot, 32 = Pushover, 64 = ntfy, 128 = Zulip, 256 = Slack
     obj.telegramClient = null;
+    obj.telegramBotApi = null;
+    obj.normalizeTelegramHandle = normalizeTelegramHandle;
     obj.discordClient = null;
     obj.discordUrl = null;
     obj.xmppClient = null;
@@ -132,17 +156,69 @@ module.exports.CreateServer = function (parent) {
     obj.slackClient = null;
     const sortCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
+    // Send a request to the Telegram HTTPS Bot API.
+    function telegramBotApiRequest(method, data, func) {
+        if (obj.telegramBotApi == null) { if (func != null) func(false, null, 'Telegram Bot API is not configured.'); return; }
+        const body = Buffer.from(JSON.stringify(data || {}));
+        var completed = false;
+        const finish = function (success, result, message) { if (completed) return; completed = true; if (func != null) func(success, result, message); };
+        const request = require('https').request({
+            hostname: 'api.telegram.org', port: 443, method: 'POST',
+            path: '/bot' + obj.telegramBotApi.token + '/' + method,
+            headers: { 'Content-Type': 'application/json', 'Content-Length': body.length }
+        }, function (response) {
+            var responseBody = '';
+            response.on('data', function (chunk) {
+                if ((responseBody.length + chunk.length) > 1048576) { response.destroy(); finish(false, null, 'Telegram response was too large.'); return; }
+                responseBody += chunk.toString();
+            });
+            response.on('end', function () {
+                var parsed = null;
+                try { parsed = JSON.parse(responseBody); } catch (ex) { finish(false, null, 'Invalid Telegram response.'); return; }
+                finish(parsed.ok === true, parsed.result, parsed.description);
+            });
+        });
+        request.setTimeout(15000, function () { request.destroy(new Error('Telegram request timed out.')); });
+        request.on('error', function (err) { finish(false, null, err.message); });
+        request.end(body);
+    }
+
+    // Resolve a Telegram username after the user has opened the bot and sent /start.
+    function resolveTelegramBotTarget(handle, func) {
+        if (/^-?[0-9]+$/.test(handle)) { func(true, handle); return; }
+        const username = handle.startsWith('@') ? handle.substring(1) : handle;
+        if (!/^[A-Za-z0-9_]{5,32}$/.test(username)) { func(false, null, 'Invalid Telegram username.'); return; }
+        telegramBotApiRequest('getUpdates', { offset: -100, limit: 100, timeout: 0, allowed_updates: ['message'] }, function (success, updates, message) {
+            if (!success || !Array.isArray(updates)) { func(false, null, message); return; }
+            const chatId = findTelegramBotChat(updates, username);
+            if (chatId != null) { func(true, chatId); return; }
+            func(false, null, 'Open the Telegram bot and send /start before verifying the handle.');
+        });
+    }
+
     // Telegram client setup
     if (parent.config.messaging.telegram) {
         // Validate Telegram configuration values
         var telegramOK = true;
-        if (typeof parent.config.messaging.telegram.apiid != 'number') { console.log('Invalid or missing Telegram apiid.'); telegramOK = false; }
-        if (typeof parent.config.messaging.telegram.apihash != 'string') { console.log('Invalid or missing Telegram apihash.'); telegramOK = false; }
-        if ((typeof parent.config.messaging.telegram.session != 'string') && (typeof parent.config.messaging.telegram.bottoken != 'string')) { console.log('Invalid or missing Telegram session or bottoken.'); telegramOK = false; }
+        const useTelegramBotApi = (parent.config.messaging.telegram.botapi === true);
+        if (useTelegramBotApi) {
+            if ((typeof parent.config.messaging.telegram.bottoken != 'string') || !/^\d+:[A-Za-z0-9_-]+$/.test(parent.config.messaging.telegram.bottoken)) { console.log('Invalid or missing Telegram bottoken.'); telegramOK = false; }
+        } else {
+            if (typeof parent.config.messaging.telegram.apiid != 'number') { console.log('Invalid or missing Telegram apiid.'); telegramOK = false; }
+            if (typeof parent.config.messaging.telegram.apihash != 'string') { console.log('Invalid or missing Telegram apihash.'); telegramOK = false; }
+            if ((typeof parent.config.messaging.telegram.session != 'string') && (typeof parent.config.messaging.telegram.bottoken != 'string')) { console.log('Invalid or missing Telegram session or bottoken.'); telegramOK = false; }
+        }
 
         if (telegramOK) {
-            // Setup Telegram
-            async function setupTelegram() {
+            if (useTelegramBotApi) {
+                obj.telegramBotApi = { token: parent.config.messaging.telegram.bottoken };
+                telegramBotApiRequest('getMe', {}, function (success, result, message) {
+                    if (success) { obj.providers |= 1; console.log('MeshCentral Telegram Bot API client is connected.'); }
+                    else { obj.telegramBotApi = null; console.log('Telegram Bot API error: ' + (message || 'Unable to authenticate.')); }
+                });
+            } else {
+                // Setup Telegram using MTProto.
+                async function setupTelegram() {
                 const { TelegramClient } = require('telegram');
                 const { StringSession } = require('telegram/sessions');
                 const { Logger } = require('telegram/extensions/Logger');
@@ -150,7 +226,7 @@ module.exports.CreateServer = function (parent) {
                 const input = require('input');
                 var client;
                 var options = { connectionRetries: 5, baseLogger: logger };
-                if (parent.config.messaging.telegram.usewss == false) { options.useWSS = false; }
+                if (typeof parent.config.messaging.telegram.usewss == 'boolean') { options.useWSS = parent.config.messaging.telegram.usewss; }
                 if (typeof parent.config.messaging.telegram.connectionretries == 'number') { options.connectionRetries = parent.config.messaging.telegram.connectionretries; }
                 if (typeof parent.config.messaging.telegram.proxy == 'object') { options.proxy = parent.config.messaging.telegram.proxy; }
                 if (parent.config.messaging.telegram.bottoken == null) {
@@ -170,8 +246,9 @@ module.exports.CreateServer = function (parent) {
                     obj.providers += 1; // Enable Telegram messaging
                     console.log("MeshCentral Telegram client is bot connected.");
                 }
+                }
+                setupTelegram();
             }
-            setupTelegram();
         }
     }
 
@@ -314,7 +391,14 @@ module.exports.CreateServer = function (parent) {
 
     // Send an user message
     obj.sendMessage = function(to, msg, domain, func) {
-        if ((to.startsWith('telegram:')) && (obj.telegramClient != null)) { // Telegram
+        if ((to.startsWith('telegram:')) && (obj.telegramBotApi != null)) { // Telegram Bot API
+            resolveTelegramBotTarget(to.substring(9), function (success, chatId, message) {
+                if (!success) { if (func != null) func(false, message); return; }
+                telegramBotApiRequest('sendMessage', { chat_id: chatId, text: msg }, function (sendSuccess, result, sendMessage) {
+                    if (func != null) func(sendSuccess, sendSuccess ? null : sendMessage);
+                });
+            });
+        } else if ((to.startsWith('telegram:')) && (obj.telegramClient != null)) { // Telegram MTProto
             async function sendTelegramMessage(to, msg, func) {
                 if (obj.telegramClient == null) return;
                 parent.debug('email', 'Sending Telegram message to: ' + to.substring(9) + ': ' + msg);
@@ -465,8 +549,19 @@ module.exports.CreateServer = function (parent) {
         sms = sms.split('[[0]]').join(domain.title ? domain.title : 'MeshCentral');
         sms = sms.split('[[1]]').join(verificationCode);
 
-        // Send the message
-        obj.sendMessage(to, sms, domain, func);
+        // Resolve Bot API usernames to a stable chat id before saving the verified handle.
+        if (to.startsWith('telegram:') && (obj.telegramBotApi != null)) {
+            resolveTelegramBotTarget(to.substring(9), function (success, chatId, message) {
+                if (!success) { if (func != null) func(false, message); return; }
+                const canonicalHandle = 'telegram:' + chatId;
+                obj.sendMessage(canonicalHandle, sms, domain, function (sendSuccess, sendMessage) {
+                    if (func != null) func(sendSuccess, sendSuccess ? canonicalHandle : sendMessage);
+                });
+            });
+        } else {
+            // Send the message
+            obj.sendMessage(to, sms, domain, func);
+        }
     };
 
     // Send 2FA verification

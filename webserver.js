@@ -10280,6 +10280,13 @@ module.exports.CreateWebServer = function (parent, db, args, certificates, doneF
 
     // Route a command from a agent. domainid, nodeid and meshid are the values of the source agent.
     obj.routeAgentCommand = function (command, domainid, nodeid, meshid) {
+        // Intel AMT session notifications are subscription-controlled server events.
+        // Do not broadcast the raw agent notification to every visible session.
+        if ((command.sessionid == null) && (command.userid == null) && (command.type === 'notify') && (command.amtMessage != null) && (parent.alerts != null)) {
+            parent.alerts.emitAlertEvent('core', { alertType: 'device.amt.session', domain: domainid, meshid: meshid, nodeid: nodeid, detail: command.value, title: command.title, icon: command.icon, tag: command.tag, id: command.id, titleid: command.titleid, msgid: command.msgid, args: command.args });
+            return;
+        }
+
         // Route a message.
         // If this command has a sessionid, that is the target.
         if (command.sessionid != null) {

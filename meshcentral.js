@@ -30,6 +30,7 @@ function CreateMeshCentralServer(config, args) {
     obj.swarmserver = null;     // Swarm server, this is used only to update older MeshCentral v1 agents
     obj.smsserver = null;       // SMS server, used to send user SMS messages
     obj.msgserver = null;       // Messaging server, used to sent used messages
+    obj.alerts = null;          // Extensible device alert and notification engine
     obj.amtEventHandler = null;
     obj.pluginHandler = null;
     obj.amtScanner = null;
@@ -1765,6 +1766,9 @@ function CreateMeshCentralServer(config, args) {
                 obj.taskManager = require('./taskmanager').createTaskManager(obj);
             }
 
+            // Create the alert engine before loading plugins so plugin constructors can register alert types.
+            obj.alerts = require('./meshalerts.js').CreateMeshAlerts(obj);
+
             // Start plugin manager if configuration allows this.
             if ((obj.config) && (obj.config.settings) && (obj.config.settings.plugins != null) && (obj.config.settings.plugins != false) && ((typeof obj.config.settings.plugins != 'object') || (obj.config.settings.plugins.enabled != false))) {
                 obj.pluginHandler = require('./pluginHandler.js').pluginHandler(obj);
@@ -2269,6 +2273,9 @@ function CreateMeshCentralServer(config, args) {
 
     // Called when the web server finished loading
     obj.StartEx5 = function () {
+        // Start the alert engine after the web server has loaded users and device groups.
+        obj.alerts.init();
+
         // Setup the email server for each domain
         var ipKvmSupport = false;
         for (var i in obj.config.domains) { if (obj.config.domains[i].ipkvm == true) { ipKvmSupport = true; } }
@@ -2399,6 +2406,7 @@ function CreateMeshCentralServer(config, args) {
     obj.Stop = function (restoreFile) {
         // If the database is not setup, exit now.
         if (!obj.db) return;
+        if (obj.alerts != null) { obj.alerts.close(); }
         // Dispatch an event saying the server is now stopping
         obj.DispatchEvent(['*'], obj, { etype: 'server', action: 'stopped', msg: "Server stopped" });
         const restorePassword = obj.config.settings.autobackup.zippasswordrequest;
@@ -2467,6 +2475,10 @@ function CreateMeshCentralServer(config, args) {
     obj.DispatchEvent = function (ids, source, event, fromPeerServer) {
         // If the database is not setup, exit now.
         if (!obj.db) return;
+        if ((event != null) && (event.action === 'notificationPolicyChange') && (obj.alerts != null)) {
+            if (event.policy != null) { obj.alerts.importPolicy(event.policy); } else { obj.alerts.reloadPolicy(event.userid); }
+        }
+        if ((event != null) && (event.action === 'alertStateChange') && (obj.alerts != null)) { obj.alerts.importStateEvent(event); }
 
         // Send event to syslog if needed
         if (obj.syslog && event.msg) { obj.syslog.log(obj.syslog.LOG_INFO, event.msg); }
@@ -2591,11 +2603,17 @@ function CreateMeshCentralServer(config, args) {
         const domainId = meshSplit[1];
         if (obj.config.domains[domainId] == null) return;
         const mailserver = obj.config.domains[domainId].mailserver;
-        if ((mailserver == null) && (obj.msgserver == null)) return;
+        if ((mailserver == null) && (obj.msgserver == null) && (obj.alerts == null)) return;
 
         // Get the device group for this device
         const mesh = obj.webserver.meshes[meshid];
         if ((mesh == null) || (mesh.links == null)) return;
+
+        // Track real MeshAgent transitions for the modular connection stability alert.
+        // In a multi-server setup only the first peer evaluates the combined stream.
+        if ((obj.alerts != null) && ((obj.multiServer == null) || (Object.keys(obj.config.peers.servers).sort()[0] === obj.serverId))) {
+            obj.alerts.recordConnectivityChange(meshid, nodeid, stateSet === true, connectType, connectTime, extraInfo && extraInfo.name);
+        }
 
         // Get the list of users that have visibility to this device
         // This includes users that are part of user groups
@@ -2612,6 +2630,31 @@ function CreateMeshCentralServer(config, args) {
         for (var i in users) {
             const user = obj.webserver.users[users[i]];
             if (user != null) {
+                if (obj.alerts != null) {
+                    const emailConnected = obj.alerts.resolveChannel(user._id, meshid, nodeid, 'device.connection.connected', 'email');
+                    const emailDisconnected = obj.alerts.resolveChannel(user._id, meshid, nodeid, 'device.connection.disconnected', 'email');
+                    if ((user.email != null) && (user.emailVerified == true) && (mailserver != null) && (emailConnected || emailDisconnected)) {
+                        if (stateSet == true) {
+                            if (emailConnected) { mailserver.notifyDeviceConnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                            else { mailserver.cancelNotifyDeviceDisconnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                        } else {
+                            if (emailDisconnected) { mailserver.notifyDeviceDisconnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                            else { mailserver.cancelNotifyDeviceConnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                        }
+                    }
+                    const messagingConnected = obj.alerts.resolveChannel(user._id, meshid, nodeid, 'device.connection.connected', 'messaging');
+                    const messagingDisconnected = obj.alerts.resolveChannel(user._id, meshid, nodeid, 'device.connection.disconnected', 'messaging');
+                    if ((obj.msgserver != null) && (messagingConnected || messagingDisconnected)) {
+                        if (stateSet == true) {
+                            if (messagingConnected) { obj.msgserver.notifyDeviceConnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                            else { obj.msgserver.cancelNotifyDeviceDisconnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                        } else {
+                            if (messagingDisconnected) { obj.msgserver.notifyDeviceDisconnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                            else { obj.msgserver.cancelNotifyDeviceConnect(user, meshid, nodeid, connectTime, connectType, powerState, serverid, extraInfo); }
+                        }
+                    }
+                    continue;
+                }
                 var notify = 0;
 
                 // Device group notifications
@@ -2694,6 +2737,11 @@ function CreateMeshCentralServer(config, args) {
         for (var i in users) {
             const user = obj.webserver.users[users[i]];
             if (user != null) {
+                if (obj.alerts != null) {
+                    if ((mailserver != null) && (user.email != null) && (user.emailVerified == true) && obj.alerts.resolveChannel(user._id, meshid, nodeid, 'device.help.requested', 'email')) { mailserver.sendDeviceHelpMail(domain, user.name, user.email, devicename, nodeid, helpusername, helprequest, user.llang); }
+                    if ((obj.msgserver != null) && (user.msghandle != null) && obj.alerts.resolveChannel(user._id, meshid, nodeid, 'device.help.requested', 'messaging')) { obj.msgserver.sendDeviceHelpRequest(domain, user.name, user.msghandle, devicename, nodeid, helpusername, helprequest, user.llang); }
+                    continue;
+                }
                 var notify = 0;
 
                 // Device group notifications
@@ -4449,7 +4497,7 @@ function mainStart() {
 
         // Messaging support
         if (config.messaging != null) {
-            if (config.messaging.telegram != null) { modules.push('telegram@2.26.22'); modules.push('input@1.0.1'); }
+            if ((config.messaging.telegram != null) && (config.messaging.telegram.botapi !== true)) { modules.push('telegram@2.26.22'); modules.push('input@1.0.1'); }
             if (config.messaging.discord != null) { if (nodeVersion >= 17) { modules.push('discord.js@14.6.0'); } else { delete config.messaging.discord; addServerWarning('This NodeJS version does not support Discord.js.', 26); } }
             if (config.messaging.xmpp != null) { modules.push('@xmpp/client@0.13.6'); }
             if (config.messaging.pushover != null) { modules.push('node-pushover@1.0.0'); }

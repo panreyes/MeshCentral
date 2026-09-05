@@ -33,6 +33,21 @@ module.exports.pluginHandler = function (parent) {
     obj.exports = {};
     obj.loadList = obj.parent.config.settings.plugins.list; // For local development / manual install, not from DB
 
+    // Server-side alert API for trusted local plugins. Alert identifiers are namespaced
+    // by plugin and all payload validation remains in the central alert engine.
+    obj.registerAlertType = function (pluginName, definition) {
+        return (parent.alerts != null) && parent.alerts.registerAlertType(pluginName, definition);
+    };
+    obj.emitAlertEvent = function (pluginName, data) {
+        return (parent.alerts != null) && parent.alerts.emitAlertEvent(pluginName, data);
+    };
+    obj.setAlertState = function (pluginName, data) {
+        return (parent.alerts != null) && parent.alerts.setAlertState(pluginName, data);
+    };
+    obj.unregisterAlertTypes = function (pluginName) {
+        return (parent.alerts != null) && parent.alerts.unregisterAlertTypes(pluginName);
+    };
+
     if (typeof obj.loadList != 'object') {
         obj.loadList = {};
         parent.db.getPlugins(function (err, plugins) {
@@ -567,6 +582,7 @@ module.exports.pluginHandler = function (parent) {
         parent.db.getPlugin(id, function (err, docs) {
             var plugin = docs[0];
             parent.db.setPluginStatus(id, 0, func);
+            obj.unregisterAlertTypes(plugin.shortName);
             delete obj.plugins[plugin.shortName];
             delete obj.exports[plugin.shortName];
             parent.updateMeshCore();
@@ -585,6 +601,7 @@ module.exports.pluginHandler = function (parent) {
                 }
             }
             parent.db.deletePlugin(id, func);
+            obj.unregisterAlertTypes(plugin.shortName);
             delete obj.plugins[plugin.shortName];
         });
     };
@@ -615,7 +632,8 @@ module.exports.pluginHandler = function (parent) {
             }
         });
 
-        // Remove old plugin instance
+        // Remove old plugin instance and pause its registered alert types.
+        obj.unregisterAlertTypes(pluginName);
         delete obj.plugins[pluginName];
         delete obj.exports[pluginName];
 

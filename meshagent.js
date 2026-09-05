@@ -766,6 +766,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                 return;
             } else {
                 device = nodes[0];
+                const previousDevice = JSON.parse(JSON.stringify(device));
                 obj.name = device.name;
 
                 // This device exists, meshid given by the device must be ignored, use the server side one.
@@ -834,6 +835,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                     if (db.changeStream) { event.noact = 1; } // If DB change stream is active, don't use this event to change the node. Another event will come.
                     parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(device.meshid, [obj.dbNodeKey]), obj, event);
                 }
+                if (parent.parent.alerts != null) { parent.parent.alerts.reconcileNode(device, previousDevice); }
             }
 
             completeAgentConnection3(device, mesh);
@@ -871,6 +873,7 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
         var agentName = obj.agentName ? obj.agentName : obj.agentInfo.computerName;
         var device = { type: 'node', mtype: mesh.mtype, _id: obj.dbNodeKey, icon: obj.agentInfo.platformType, meshid: obj.dbMeshKey, name: agentName, rname: obj.agentInfo.computerName, domain: domain.id, agent: { ver: obj.agentInfo.agentVersion, id: obj.agentInfo.agentId, caps: obj.agentInfo.capabilities }, host: null, firstconnect: obj.connectTime  };
         db.Set(device);
+        if (parent.parent.alerts != null) { parent.parent.alerts.reconcileNode(device); }
 
         // Event the new node
         if ((obj.agentInfo) && (obj.agentInfo.capabilities & 0x20)) {
@@ -1036,6 +1039,10 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
         db.GetHash('si' + obj.dbNodeKey, function (err, results) {
             if ((results != null) && (results.length == 1)) { obj.send(JSON.stringify({ action: 'sysinfo', hash: results[0].hash })); } else { obj.send(JSON.stringify({ action: 'sysinfo' })); }
         });
+
+        // Tell the core which optional alert collectors are required. Expensive
+        // inventories remain disabled unless an administrator configured them.
+        if (parent.parent.alerts != null) { obj.send(JSON.stringify({ action: 'alertconfig', config: parent.parent.alerts.getAgentAlertConfig() })); }
 
         // Agent error log dump
         if (parent.parent.agentErrorLog != null) {
@@ -1302,10 +1309,14 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                         command._id = 'if' + obj.dbNodeKey;
                         command.domain = domain.id;
                         command.type = 'ifinfo';
-                        db.Set(command);
+                        db.Get(command._id, function (err, docs) {
+                            const previousNetInfo = ((err == null) && Array.isArray(docs) && (docs.length === 1)) ? docs[0] : null;
+                            db.Set(command);
+                            if (parent.parent.alerts != null) { parent.parent.alerts.reconcileNetInfo(command, { _id: obj.dbNodeKey, meshid: obj.dbMeshKey, name: obj.name || obj.agentInfo.computerName }, previousNetInfo); }
 
-                        // Event the node interface information change
-                        parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(obj.meshid, [obj.dbNodeKey]), obj, { action: 'ifchange', nodeid: obj.dbNodeKey, domain: domain.id, nolog: 1 });
+                            // Event the node interface information change
+                            parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(obj.meshid, [obj.dbNodeKey]), obj, { action: 'ifchange', nodeid: obj.dbNodeKey, domain: domain.id, nolog: 1 });
+                        });
 
                         break;
                     }
@@ -1425,49 +1436,62 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                         command.data.time = Date.now();
 
                         // Store the document and notify viewers that the sysinfo hash changed.
-                        var saveSysInfo = function () {
+                        var saveSysInfo = function (previousSysInfo) {
                             db.Set(command.data);
+                            if (parent.parent.alerts != null) { parent.parent.alerts.reconcileSysInfo(command.data, { _id: obj.dbNodeKey, meshid: obj.dbMeshKey, name: obj.name || obj.agentInfo.computerName }, previousSysInfo); }
                             // Event the new sysinfo hash, this will notify everyone that the sysinfo document was changed
                             var event = { etype: 'node', action: 'sysinfohash', nodeid: obj.dbNodeKey, domain: domain.id, hash: command.data.hash, nolog: 1 };
                             parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(obj.dbMeshKey, [obj.dbNodeKey]), obj, event);
                         };
 
-                        var volumes = command.data.hardware?.windows?.volumes;
-                        if (volumes) {
-                            // BitLocker recovery keys are kept in hardware.windows.bitlocker, keyed by protector identifier
-                            // (decoupled from the drive letter, which can change). A key is retained for 'bitlockerKeyRetentionDays'
-                            // days after it was last read; 0 (default) disables carry-forward, keeping only keys read in this scan.
-                            var ttl = (parent.parent.config.settings?.bitlockerkeyretentiondays > 0) ? (parent.parent.config.settings.bitlockerkeyretentiondays * 86400000) : 0;
-                            var updateBLKeys = function (prevKeys) {
-                                var keys = {};
-                                // Carry forward keys last read within the retention window.
-                                if ((ttl > 0) && prevKeys) {
-                                    for (const id in prevKeys) { if ((command.data.time - prevKeys[id].t) <= ttl) { keys[id] = prevKeys[id]; } }
-                                }
-                                // Record keys actually read this scan (refreshes the timestamp).
-                                for (const v of Object.values(volumes)) {
-                                    if (v && v.identifier && v.recoveryPassword) { keys[v.identifier] = { rp: v.recoveryPassword, t: command.data.time }; }
-                                }
-                                command.data.hardware.windows.bitlocker = keys;
-                                saveSysInfo();
-                            };
-                            if (ttl > 0) {
-                                // Need the previous doc to carry keys forward.
-                                db.Get(command.data._id, function (err, nodes) { updateBLKeys((nodes && nodes.length > 0) ? nodes[0].hardware?.windows?.bitlocker : null); });
+                        var processSysInfo = function (previousSysInfo) {
+                            var volumes = command.data.hardware?.windows?.volumes;
+                            if (volumes) {
+                                // BitLocker recovery keys are kept in hardware.windows.bitlocker, keyed by protector identifier
+                                // (decoupled from the drive letter, which can change). A key is retained for 'bitlockerKeyRetentionDays'
+                                // days after it was last read; 0 (default) disables carry-forward, keeping only keys read in this scan.
+                                var ttl = (parent.parent.config.settings?.bitlockerkeyretentiondays > 0) ? (parent.parent.config.settings.bitlockerkeyretentiondays * 86400000) : 0;
+                                var updateBLKeys = function (prevKeys) {
+                                    var keys = {};
+                                    // Carry forward keys last read within the retention window.
+                                    if ((ttl > 0) && prevKeys) {
+                                        for (const id in prevKeys) { if ((command.data.time - prevKeys[id].t) <= ttl) { keys[id] = prevKeys[id]; } }
+                                    }
+                                    // Record keys actually read this scan (refreshes the timestamp).
+                                    for (const v of Object.values(volumes)) {
+                                        if (v && v.identifier && v.recoveryPassword) { keys[v.identifier] = { rp: v.recoveryPassword, t: command.data.time }; }
+                                    }
+                                    command.data.hardware.windows.bitlocker = keys;
+                                    saveSysInfo(previousSysInfo);
+                                };
+                                updateBLKeys((ttl > 0) ? previousSysInfo?.hardware?.windows?.bitlocker : null);
                             } else {
-                                updateBLKeys(null);   // no carry-forward, no previous-doc read needed
+                                saveSysInfo(previousSysInfo);   // non-Windows
                             }
-                        } else {
-                            saveSysInfo();   // non-Windows
-                        }
+                        };
+
+                        // Read the previous inventory once so alert evaluators can compare
+                        // stable hardware fields before the new document replaces it.
+                        db.Get(command.data._id, function (err, docs) { processSysInfo((docs && docs.length > 0) ? docs[0] : null); });
                     }
                     break;
                 }
                 case 'sysinfocheck': {
                     // Check system information update
+                    if (parent.parent.alerts != null) { parent.parent.alerts.recordInventoryCheck({ _id: obj.dbNodeKey, meshid: obj.dbMeshKey, name: obj.name || obj.agentInfo.computerName }, Date.now()); }
                     db.GetHash('si' + obj.dbNodeKey, function (err, results) {
                         if ((results != null) && (results.length == 1)) { obj.send(JSON.stringify({ action: 'sysinfo', hash: results[0].hash })); } else { obj.send(JSON.stringify({ action: 'sysinfo' })); }
                     });
+                    break;
+                }
+                case 'alerttelemetry': {
+                    // Ephemeral health samples are evaluated but are not copied into
+                    // the node document or system-information inventory.
+                    var telemetryLength = 0;
+                    try { telemetryLength = JSON.stringify(command).length; } catch (ex) { break; }
+                    if ((telemetryLength > 0) && (telemetryLength <= 65536) && (parent.parent.alerts != null)) {
+                        parent.parent.alerts.reconcileTelemetry(command, { _id: obj.dbNodeKey, meshid: obj.dbMeshKey, name: obj.name || obj.agentInfo.computerName });
+                    }
                     break;
                 }
                 case 'sessions': {
@@ -1989,6 +2013,10 @@ module.exports.CreateMeshAgent = function (parent, db, ws, req, args, domain) {
                     if (db.changeStream) { event.noact = 1; } // If DB change stream is active, don't use this event to change the node. Another event will come.
                     parent.parent.DispatchEvent(parent.CreateMeshDispatchTargets(device.meshid, [obj.dbNodeKey]), obj, event);
                 }
+
+                // Reconcile stateful device health alerts. Unknown or malformed health
+                // values are deliberately ignored by the alert engine.
+                if (parent.parent.alerts != null) { parent.parent.alerts.reconcileNodeHealth(device); parent.parent.alerts.reconcileNode(device); }
 
                 // Device change is done.
                 delete obj.deviceChanging;
