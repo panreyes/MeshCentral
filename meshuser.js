@@ -1927,10 +1927,20 @@ module.exports.CreateMeshUser = function (parent, db, ws, req, args, domain, use
                         if (err == null) { parent.parent.alerts.getClientPolicy(user, function (policy) { try { ws.send(JSON.stringify(policy)); } catch (ex) { } }); }
                     };
                     if ((definition == null) || (definition.kind !== 'state') || (definition.ignorable !== true) || (typeof command.ignored !== 'boolean')) { finishIgnoreChange('Invalid alert'); break; }
-                    parent.GetNodeWithRights(domain, user, command.nodeid, function (node, rights, visible) {
-                        if ((node == null) || (visible !== true) || (rights !== MESHRIGHT_ADMIN && ((rights & definition.requiredRight) === 0))) { finishIgnoreChange('Access denied'); return; }
-                        parent.parent.alerts.setIgnored(user, command.nodeid, node.meshid, command.alerttype, command.ignored, finishIgnoreChange);
-                    });
+                    const ignoreScope = (command.scope == null) ? 'node' : command.scope;
+                    const ignoreScopeId = (command.scopeid == null) ? command.nodeid : command.scopeid;
+                    if (ignoreScope === 'node') {
+                        if (common.validateString(ignoreScopeId, 1, 1024) == false) { finishIgnoreChange('Invalid device id'); break; }
+                        parent.GetNodeWithRights(domain, user, ignoreScopeId, function (node, rights, visible) {
+                            if ((node == null) || (visible !== true) || ((definition.requiredRight !== 0) && (rights !== MESHRIGHT_ADMIN) && ((rights & definition.requiredRight) === 0))) { finishIgnoreChange('Access denied'); return; }
+                            parent.parent.alerts.setIgnoredScope(user, 'node', node._id, node.meshid, command.alerttype, command.ignored, finishIgnoreChange);
+                        });
+                    } else if (ignoreScope === 'mesh') {
+                        if ((common.validateString(ignoreScopeId, 1, 1024) == false) || !ignoreScopeId.startsWith('mesh/' + domain.id + '/')) { finishIgnoreChange('Invalid group id'); break; }
+                        const meshRights = parent.GetMeshRights(user, ignoreScopeId);
+                        if ((parent.IsMeshViewable(user, ignoreScopeId) == false) || ((definition.requiredRight !== 0) && (meshRights !== MESHRIGHT_ADMIN) && ((meshRights & definition.requiredRight) === 0))) { finishIgnoreChange('Access denied'); break; }
+                        parent.parent.alerts.setIgnoredScope(user, 'mesh', ignoreScopeId, ignoreScopeId, command.alerttype, command.ignored, finishIgnoreChange);
+                    } else { finishIgnoreChange('Invalid scope'); }
                     break;
                 }
             case 'changemeshnotify':

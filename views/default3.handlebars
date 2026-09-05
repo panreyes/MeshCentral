@@ -22462,7 +22462,7 @@
             var x = '<div class="p-2">';
             x += '<div class="mb-3"><label class="form-check form-check-inline"><input id=notificationPolicySound class="form-check-input" type=checkbox> <span class="form-check-label">' + "Notification sound" + '</span></label><label class="form-check form-check-inline"><input id=notificationPolicyGroupName class="form-check-input" type=checkbox> <span class="form-check-label">' + "Display device group name" + '</span></label></div>';
             x += '<input id=notificationPolicySearch type=search class="form-control mb-3" placeholder="' + "Search notifications" + '" onkeyup="notificationPolicyFilter(this.value)" style="max-width:620px">';
-            notificationEditorContext = { scope: 'account', scopeId: null, controls: [] };
+            notificationEditorContext = { scope: 'account', scopeId: null, controls: [], ignoreControls: [] };
             var lastGroup = null, groupIndex = -1;
             for (var i = 0; i < notificationPolicy.catalog.length; i++) {
                 var definition = notificationPolicy.catalog[i];
@@ -22500,9 +22500,11 @@
             if (notificationPolicy.ignored && (notificationPolicy.ignored.length > 0)) {
                 var ignoredHtml = '';
                 for (var j = 0; j < notificationPolicy.ignored.length; j++) {
-                    var ignored = notificationPolicy.ignored[j], node = getNodeFromId(ignored.nodeid), ignoredDefinition = null;
+                    var ignored = notificationPolicy.ignored[j], node = (ignored.scope == 'mesh') ? null : getNodeFromId(ignored.nodeid), ignoredDefinition = null;
                     for (var k = 0; k < notificationPolicy.catalog.length; k++) { if (notificationPolicy.catalog[k].id == ignored.alertType) ignoredDefinition = notificationPolicy.catalog[k]; }
-                    var ignoredNodeName = (node != null) ? node.name : (ignored.deviceName || ignored.nodeid);
+                    var ignoredNodeName;
+                    if (ignored.scope == 'mesh') { var ignoredMesh = meshes[ignored.scopeId || ignored.meshid]; ignoredNodeName = "Device Group" + ': ' + ((ignoredMesh != null) ? ignoredMesh.name : (ignored.meshName || ignored.scopeId || ignored.meshid)); }
+                    else { ignoredNodeName = (node != null) ? node.name : (ignored.deviceName || ignored.nodeid || ignored.scopeId); }
                     if (ignoredDefinition != null) ignoredHtml += '<div class="my-1">' + EscapeHtml(ignoredNodeName) + ' — ' + EscapeHtml(ignoredDefinition.title) + ' <button class="btn btn-sm btn-outline-secondary py-0" type=button onclick="notificationPolicyReactivate(' + j + ')">' + "Reactivate" + '</button></div>';
                 }
                 if (ignoredHtml != '') x += '<div class="border-top mt-3 pt-2"><b>' + "Ignored alerts" + '</b>' + ignoredHtml + '</div>';
@@ -22554,12 +22556,12 @@
             if (scope == 'account') {
                 x += '<div style="margin-bottom:8px"><label><input id=notificationPolicySound type=checkbox> ' + "Notification sound" + '</label><br><label><input id=notificationPolicyGroupName type=checkbox> ' + "Display device group name" + '</label></div>';
             }
-            x += '<div style="max-height:420px;overflow:auto"><table style="width:100%;border-collapse:collapse"><tr><th style=text-align:left>' + "Notification" + '</th><th>' + "Web" + '</th><th>' + "Email" + '</th><th>' + "Messaging" + '</th></tr>';
-            notificationEditorContext = { scope: scope, scopeId: scopeId, controls: [] };
+            x += '<div style="max-height:420px;overflow:auto"><table style="width:100%;border-collapse:collapse"><tr><th style=text-align:left>' + "Notification" + '</th><th>' + "Web" + '</th><th>' + "Email" + '</th><th>' + "Messaging" + '</th>' + ((scope == 'account') ? '' : ('<th>' + "Ignore" + '</th>')) + '</tr>';
+            notificationEditorContext = { scope: scope, scopeId: scopeId, controls: [], ignoreControls: [] };
             var lastGroup = null;
             for (var i = 0; i < notificationPolicy.catalog.length; i++) {
                 var definition = notificationPolicy.catalog[i];
-                if (definition.group != lastGroup) { x += '<tr><td colspan=4 style="padding-top:8px;border-bottom:1px solid #888"><b>' + EscapeHtml(definition.group) + '</b></td></tr>'; lastGroup = definition.group; }
+                if (definition.group != lastGroup) { x += '<tr><td colspan=' + ((scope == 'account') ? 4 : 5) + ' style="padding-top:8px;border-bottom:1px solid #888"><b>' + EscapeHtml(definition.group) + '</b></td></tr>'; lastGroup = definition.group; }
                 x += '<tr class=notificationPolicyRow data-search="' + EscapeHtml((definition.group + ' ' + definition.title).toLowerCase()) + '"><td style="padding:4px">' + EscapeHtml(definition.title) + '</td>';
                 var rule = notificationPolicyRule(scope, scopeId, definition.id);
                 for (var c = 0; c < 3; c++) {
@@ -22576,16 +22578,23 @@
                         notificationEditorContext.controls.push({ id: controlId, alertType: definition.id, channel: channel, oldValue: ((scope == 'account') && (value == '-1')) ? '0' : value, available: available });
                     }
                 }
+                if (scope != 'account') {
+                    var ignoreControlId = 'notificationPolicyIgnore_' + i, ignoreChecked = notificationPolicyIgnored(scope, scopeId, definition.id);
+                    if ((definition.kind == 'state') && (definition.ignorable === true)) {
+                        x += '<td style=text-align:center><input id="' + ignoreControlId + '" class="form-check-input" type=checkbox' + (ignoreChecked ? ' checked' : '') + '></td>';
+                        notificationEditorContext.ignoreControls.push({ id: ignoreControlId, alertType: definition.id, oldValue: ignoreChecked });
+                    } else { x += '<td style=text-align:center;color:#888>—</td>'; }
+                }
                 x += '</tr>';
             }
             x += '</table></div>';
             if ((scope == 'account') && notificationPolicy.ignored && (notificationPolicy.ignored.length > 0)) {
                 var ignoredHtml = '';
                 for (var j = 0; j < notificationPolicy.ignored.length; j++) {
-                    var ignored = notificationPolicy.ignored[j], node = getNodeFromId(ignored.nodeid);
+                    var ignored = notificationPolicy.ignored[j], node = (ignored.scope == 'mesh') ? null : getNodeFromId(ignored.nodeid);
                     var ignoredDefinition = null;
                     for (var k = 0; k < notificationPolicy.catalog.length; k++) { if (notificationPolicy.catalog[k].id == ignored.alertType) ignoredDefinition = notificationPolicy.catalog[k]; }
-                    var ignoredNodeName = (node != null) ? node.name : (ignored.deviceName || ignored.nodeid);
+                    var ignoredNodeName = (ignored.scope == 'mesh') ? ("Device Group" + ': ' + (ignored.meshName || ignored.scopeId || ignored.meshid)) : ((node != null) ? node.name : (ignored.deviceName || ignored.nodeid || ignored.scopeId));
                     if (ignoredDefinition != null) ignoredHtml += '<div style="margin:4px">' + EscapeHtml(ignoredNodeName) + ' — ' + EscapeHtml(ignoredDefinition.title) + ' <span style="color:orange;cursor:pointer" onclick="notificationPolicyReactivate(' + j + ')">' + "Reactivate" + '</span></div>';
                 }
                 if (ignoredHtml != '') x += '<div style="border-top:1px solid #888;margin-top:8px;padding-top:6px"><b>' + "Ignored alerts" + '</b>' + ignoredHtml + '</div>';
@@ -22613,6 +22622,10 @@
                 channels[control.channel] = (value == '-1') ? null : (value == '1');
                 meshserver.send({ action: 'setnotificationrule', scope: notificationEditorContext.scope, scopeid: notificationEditorContext.scopeId, alerttype: control.alertType, channels: channels });
             }
+            for (var j = 0; j < notificationEditorContext.ignoreControls.length; j++) {
+                var ignoreControl = notificationEditorContext.ignoreControls[j], ignoreValue = Q(ignoreControl.id).checked;
+                if (ignoreValue != ignoreControl.oldValue) meshserver.send({ action: 'setnotificationignore', scope: notificationEditorContext.scope, scopeid: notificationEditorContext.scopeId, alerttype: ignoreControl.alertType, ignored: ignoreValue });
+            }
             notificationEditorContext = null;
             if ((accountSettingsTab == 'notifications') && (Q('notificationPolicySaveStatus') != null)) QH('notificationPolicySaveStatus', "Saved");
         }
@@ -22620,8 +22633,18 @@
         function notificationPolicyReactivate(index) {
             if ((notificationPolicy == null) || (notificationPolicy.ignored == null) || (notificationPolicy.ignored[index] == null)) return;
             var ignored = notificationPolicy.ignored[index];
-            meshserver.send({ action: 'setnotificationignore', nodeid: ignored.nodeid, alerttype: ignored.alertType, ignored: false });
+            meshserver.send({ action: 'setnotificationignore', scope: ignored.scope || 'node', scopeid: ignored.scopeId || ignored.nodeid, nodeid: ignored.nodeid, alerttype: ignored.alertType, ignored: false });
             if (accountSettingsTab != 'notifications') dialogclose(0);
+        }
+
+        function notificationPolicyIgnored(scope, scopeId, alertType) {
+            if ((notificationPolicy == null) || !Array.isArray(notificationPolicy.ignored)) return false;
+            for (var i = 0; i < notificationPolicy.ignored.length; i++) {
+                var ignored = notificationPolicy.ignored[i], ignoredScope = ignored.scope || 'node';
+                var ignoredScopeId = ignored.scopeId || ((ignoredScope == 'mesh') ? ignored.meshid : ignored.nodeid);
+                if ((ignoredScope == scope) && (ignoredScopeId == scopeId) && (ignored.alertType == alertType)) return true;
+            }
+            return false;
         }
 
 

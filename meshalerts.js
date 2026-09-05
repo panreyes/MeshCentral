@@ -53,10 +53,20 @@ function resolveChannel(policy, meshid, nodeid, alertType, channel) {
     return false;
 }
 
-function isIgnored(policy, nodeid, alertType) {
+function ignoredScope(item) { return ((item != null) && (item.scope === 'mesh')) ? 'mesh' : 'node'; }
+
+function ignoredScopeId(item) {
+    if (item == null) return null;
+    return (ignoredScope(item) === 'mesh') ? (item.scopeId || item.meshid) : (item.scopeId || item.nodeid);
+}
+
+function isIgnored(policy, meshid, nodeid, alertType) {
     if ((policy == null) || !Array.isArray(policy.ignored)) return false;
     for (var i = 0; i < policy.ignored.length; i++) {
-        if ((policy.ignored[i] != null) && (policy.ignored[i].nodeid === nodeid) && (policy.ignored[i].alertType === alertType)) return true;
+        const item = policy.ignored[i];
+        if ((item == null) || (item.alertType !== alertType)) continue;
+        if ((ignoredScope(item) === 'mesh') && (ignoredScopeId(item) === meshid)) return true;
+        if ((ignoredScope(item) === 'node') && (ignoredScopeId(item) === nodeid)) return true;
     }
     return false;
 }
@@ -285,10 +295,23 @@ module.exports.CreateMeshAlerts = function (parent) {
             if (rule.scope !== 'account') cleanRule.scopeId = rule.scopeId;
             rules.push(cleanRule);
         }
+        const ignoredKeys = {};
         for (var j = 0; j < imported.ignored.length; j++) {
             const item = imported.ignored[j];
-            if ((item == null) || (typeof item !== 'object') || (typeof item.nodeid !== 'string') || !item.nodeid.startsWith('node/' + domain + '/') || (typeof item.alertType !== 'string') || !TYPE_ID_RE.test(item.alertType)) continue;
-            ignored.push(item);
+            if ((item == null) || (typeof item !== 'object') || (typeof item.alertType !== 'string') || !TYPE_ID_RE.test(item.alertType)) continue;
+            const scope = ignoredScope(item), scopeId = ignoredScopeId(item);
+            if ((scope === 'mesh') && ((typeof scopeId !== 'string') || !scopeId.startsWith('mesh/' + domain + '/'))) continue;
+            if ((scope === 'node') && ((typeof scopeId !== 'string') || !scopeId.startsWith('node/' + domain + '/'))) continue;
+            const ignoredKey = scope + '\0' + scopeId + '\0' + item.alertType;
+            if (ignoredKeys[ignoredKey] === true) continue;
+            ignoredKeys[ignoredKey] = true;
+            const cleanItem = { scope: scope, scopeId: scopeId, alertType: item.alertType };
+            if (scope === 'mesh') cleanItem.meshid = scopeId; else {
+                cleanItem.nodeid = scopeId;
+                if ((typeof item.meshid === 'string') && item.meshid.startsWith('mesh/' + domain + '/')) cleanItem.meshid = item.meshid;
+            }
+            if ((typeof item.created === 'number') && Number.isFinite(item.created)) cleanItem.created = item.created;
+            ignored.push(cleanItem);
         }
         imported.domain = domain;
         imported.rules = rules;
@@ -348,7 +371,7 @@ module.exports.CreateMeshAlerts = function (parent) {
         return !!(legacy[alertType] && legacy[alertType][channel] && (mask & legacy[alertType][channel]));
     };
 
-    obj.isIgnored = function (userid, nodeid, alertType) { return isIgnored(obj.policies[userid], nodeid, alertType); };
+    obj.isIgnored = function (userid, meshid, nodeid, alertType) { return isIgnored(obj.policies[userid], meshid, nodeid, alertType); };
 
     function readAccountMask(userid, callback) {
         parent.db.Get('ws' + userid, function (err, docs) {
@@ -487,21 +510,31 @@ module.exports.CreateMeshAlerts = function (parent) {
         });
     };
 
-    obj.setIgnored = function (user, nodeid, meshid, alertType, ignored, callback) {
+    obj.setIgnoredScope = function (user, scope, scopeId, meshid, alertType, ignored, callback) {
         obj.ensurePolicy(user, function (policy) {
             const definition = obj.catalog[alertType];
-            if ((policy == null) || (definition == null) || (definition.kind !== 'state') || (definition.ignorable !== true) || (typeof nodeid !== 'string') || !nodeid.startsWith('node/' + policy.domain + '/') || (typeof meshid !== 'string') || !meshid.startsWith('mesh/' + policy.domain + '/')) { callback('Invalid alert'); return; }
+            if ((policy == null) || (definition == null) || (definition.kind !== 'state') || (definition.ignorable !== true) || (['node', 'mesh'].indexOf(scope) < 0) || (typeof scopeId !== 'string') || (typeof meshid !== 'string') || !meshid.startsWith('mesh/' + policy.domain + '/') || ((scope === 'node') && !scopeId.startsWith('node/' + policy.domain + '/')) || ((scope === 'mesh') && (scopeId !== meshid))) { callback('Invalid alert'); return; }
             var index = -1;
-            for (var i = 0; i < policy.ignored.length; i++) { if ((policy.ignored[i] != null) && (policy.ignored[i].nodeid === nodeid) && (policy.ignored[i].alertType === alertType)) index = i; }
+            for (var i = 0; i < policy.ignored.length; i++) { if ((policy.ignored[i] != null) && (ignoredScope(policy.ignored[i]) === scope) && (ignoredScopeId(policy.ignored[i]) === scopeId) && (policy.ignored[i].alertType === alertType)) index = i; }
             const reactivated = (ignored === false) && (index >= 0);
-            if ((ignored === true) && (index < 0)) policy.ignored.push({ nodeid: nodeid, meshid: meshid, alertType: alertType, created: Date.now() });
+            if ((ignored === true) && (index < 0)) {
+                const item = { scope: scope, scopeId: scopeId, meshid: meshid, alertType: alertType, created: Date.now() };
+                if (scope === 'node') item.nodeid = scopeId;
+                policy.ignored.push(item);
+            }
             if ((ignored === true) && (index >= 0)) policy.ignored[index].meshid = meshid;
             if ((ignored === false) && (index >= 0)) policy.ignored.splice(index, 1);
             savePolicy(policy, function (err) {
-                if ((err == null) && reactivated) { obj.notifyActiveToUser(user, nodeid, alertType); }
+                if ((err == null) && reactivated) {
+                    if (scope === 'node') obj.notifyActiveToUser(user, scopeId, alertType); else obj.notifyActiveInMeshToUser(user, scopeId, alertType);
+                }
                 callback(err, policy);
             });
         });
+    };
+
+    obj.setIgnored = function (user, nodeid, meshid, alertType, ignored, callback) {
+        obj.setIgnoredScope(user, 'node', nodeid, meshid, alertType, ignored, callback);
     };
 
     function usersForNode(meshid, nodeid) {
@@ -621,7 +654,7 @@ module.exports.CreateMeshAlerts = function (parent) {
         for (var i = 0; i < entry.items.length; i++) {
             const item = entry.items[i], currentDefinition = obj.catalog[item.definition.id];
             if ((currentDefinition == null) || !hasRights(user, currentDefinition, item.data.meshid, item.data.nodeid)) continue;
-            if ((currentDefinition.kind === 'state') && obj.isIgnored(userid, item.data.nodeid, currentDefinition.id)) continue;
+            if ((currentDefinition.kind === 'state') && obj.isIgnored(userid, item.data.meshid, item.data.nodeid, currentDefinition.id)) continue;
             if (!obj.resolveChannel(userid, item.data.meshid, item.data.nodeid, currentDefinition.id, channel)) continue;
             items.push({ definition: currentDefinition, phase: item.phase, data: item.data });
         }
@@ -649,7 +682,7 @@ module.exports.CreateMeshAlerts = function (parent) {
 
     function deliverToUser(user, definition, phase, data, onlyChannels) {
         if (!hasRights(user, definition, data.meshid, data.nodeid)) return;
-        if ((definition.kind === 'state') && obj.isIgnored(user._id, data.nodeid, definition.id)) return;
+        if ((definition.kind === 'state') && obj.isIgnored(user._id, data.meshid, data.nodeid, definition.id)) return;
         for (var i = 0; i < definition.channels.length; i++) {
             const channel = definition.channels[i];
             if (onlyChannels && (onlyChannels.indexOf(channel) < 0)) continue;
@@ -1051,6 +1084,16 @@ module.exports.CreateMeshAlerts = function (parent) {
         }
     };
 
+    obj.notifyActiveInMeshToUser = function (user, meshid, alertType, onlyChannels) {
+        for (var id in obj.states) {
+            const state = obj.states[id];
+            if ((state.meshid === meshid) && (state.alertType === alertType)) {
+                const definition = obj.catalog[alertType];
+                if (definition != null) deliverToUser(user, definition, 'active', state, onlyChannels);
+            }
+        }
+    };
+
     obj.getClientPolicy = function (user, callback) {
         obj.ensurePolicy(user, function (policy) {
             const domain = parent.config.domains[policy.domain];
@@ -1073,7 +1116,21 @@ module.exports.CreateMeshAlerts = function (parent) {
                 const item = policy.ignored[i];
                 if ((item == null) || (typeof item !== 'object')) continue;
                 const definition = obj.catalog[item.alertType];
-                if ((definition != null) && (ignoredNodeIds[item.nodeid] == null)) ignoredNodeIds[item.nodeid] = true;
+                if (definition == null) continue;
+                if (ignoredScope(item) === 'mesh') {
+                    const meshid = ignoredScopeId(item), meshRights = parent.webserver.GetMeshRights(user, meshid);
+                    if ((parent.webserver.IsMeshViewable(user, meshid) !== false) && ((definition.requiredRight === 0) || (meshRights === 0xFFFFFFFF) || ((meshRights & definition.requiredRight) !== 0))) {
+                        const visibleMeshItem = clone(item), mesh = parent.webserver.meshes && parent.webserver.meshes[meshid];
+                        visibleMeshItem.scope = 'mesh';
+                        visibleMeshItem.scopeId = meshid;
+                        visibleMeshItem.meshid = meshid;
+                        visibleMeshItem.meshName = (mesh && mesh.name) || meshid;
+                        response.ignored.push(visibleMeshItem);
+                    }
+                } else {
+                    const nodeid = ignoredScopeId(item);
+                    if (ignoredNodeIds[nodeid] == null) ignoredNodeIds[nodeid] = true;
+                }
             }
             const ignoredNodeKeys = Object.keys(ignoredNodeIds);
             pending = ignoredNodeKeys.length;
@@ -1085,8 +1142,11 @@ module.exports.CreateMeshAlerts = function (parent) {
                             const ignoredItem = policy.ignored[ignoredIndex];
                             if ((ignoredItem == null) || (typeof ignoredItem !== 'object')) continue;
                             const ignoredDefinition = obj.catalog[ignoredItem.alertType];
-                            if ((ignoredItem.nodeid === node._id) && (ignoredDefinition != null) && hasRights(user, ignoredDefinition, node.meshid, node._id)) {
+                            if ((ignoredScope(ignoredItem) === 'node') && (ignoredScopeId(ignoredItem) === node._id) && (ignoredDefinition != null) && hasRights(user, ignoredDefinition, node.meshid, node._id)) {
                                 const visibleItem = clone(ignoredItem);
+                                visibleItem.scope = 'node';
+                                visibleItem.scopeId = node._id;
+                                visibleItem.nodeid = node._id;
                                 visibleItem.meshid = node.meshid;
                                 visibleItem.deviceName = node.name;
                                 response.ignored.push(visibleItem);
