@@ -412,6 +412,8 @@
                                             onkeypress="if (event.key == 'Enter') go(16)">Events</td>
                                         <td tabindex=0 id=MainDevInfo class="topbar_td style3x" onmouseup=go(17,event)
                                             onkeypress="if (event.key == 'Enter') go(17)">Details</td>
+                                        <td tabindex=0 id=MainDevAlerts class="topbar_td style3x" onmouseup=go(119,event)
+                                            onkeypress="if (event.key == 'Enter') go(119)">Alerts</td>
                                         <td tabindex=0 id=MainDevAmt class="topbar_td style3x" onmouseup=go(14,event)
                                             onkeypress="if (event.key == 'Enter') go(14)">Intel&reg;AMT</td>
                                         <td tabindex=0 id=MainDevConsole class="topbar_td style3x" onmouseup=go(15,event)
@@ -682,6 +684,10 @@
                 <div id="p2title" class="d-flex align-items-center">
                     <div class="fs-4 fw-bold">My Account</div>
                 </div>
+                <div id="p2settingsTabs" class="nav nav-tabs mb-2">
+                    <button id="p2settingsGeneralTab" class="nav-link active" onclick="accountSelectSettingsTab('general')">General</button>
+                    <button id="p2settingsNotificationsTab" class="nav-link" onclick="accountSelectSettingsTab('notifications')">Notifications</button>
+                </div>
                 <div id="p2info" style="overflow-y:auto">
                     <div id="p2AccountImageFrame">
                         <img id="p2AccountImage" alt="" width="128" height="128"
@@ -763,6 +769,7 @@
                     </div>
                     <br style=clear:both />
                 </div>
+                <div id="p2notifications" style="display:none;overflow-y:auto"></div>
             </div>
             <div id=p3 style="display:none">
                 <div id="p3title" class="d-flex align-items-center">
@@ -1751,6 +1758,17 @@
                 </div>
                 <div id="p19headers"></div>
                 <div id=p19pages></div>
+            </div>
+            <div id=p119 style="display:none;">
+                <div id="p119title" class="d-flex align-items-center">
+                    <div id="p119BackButton" class="pe-2">
+                        <i class="fa-solid fa-square-caret-left fa-2xl" role="button" tabindex=0 onclick=goBack() title="Back" onkeypress="if (event.key == 'Enter') goBack()"></i>
+                    </div>
+                    <div class='fs-4 fw-bold'><i class="fa-solid fa-bell fa-sm me-2 text-secondary"></i>Alerts<span id=p119deviceName></span></div>
+                </div>
+                <div id=p119info class="ps-0 pb-5 overflow-y-auto container-fluid">
+                    <div id=p119alerts></div>
+                </div>
             </div>
             <div id=p20 style="display:none">
                 <div id=p20main style="overflow-y:auto">
@@ -2813,6 +2831,7 @@
                 QC('p16title').add('d-none');
                 QC('p17title').add('d-none');
                 QC('p18title').add('d-none');
+                QC('p119title').add('d-none');
                 QC('p20title').add('d-none');
                 QC('p21title').add('d-none');
                 QC('p30title').add('d-none');
@@ -2843,6 +2862,8 @@
             var xh2 = (uiMode > 1) ? 24 : 0;
             QS('p2info')['height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
             QS('p2info')['max-height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
+            QS('p2notifications')['height'] = 'calc(100vh - ' + (65 + xh + xh2) + 'px)';
+            QS('p2notifications')['max-height'] = 'calc(100vh - ' + (65 + xh + xh2) + 'px)';
             QS('p3users')['max-height'] = 'calc(100vh - ' + (50 + xh) + 'px)'; // 124
             QS('p50groups')['max-height'] = 'calc(100vh - ' + (50 + xh) + 'px)'; // 124
             QS('p3events')['height'] = 'calc(100vh - ' + (50 + xh) + 'px)'; // 124
@@ -2887,6 +2908,8 @@
             QS('p10info')['max-height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
             QS('p17info')['height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
             QS('p17info')['max-height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
+            QS('p119info')['height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
+            QS('p119info')['max-height'] = 'calc(100vh - ' + (20 + xh + xh2) + 'px)';
             QS('p18info')['height'] = 'calc(100vh - ' + (120 + xh + xh2) + 'px)';
 			QS('p18info')['max-height'] = 'calc(100vh - ' + (120 + xh + xh2) + 'px)';
             QS('p20main')['height'] = 'calc(100vh - ' + (-50 + xh + xh2) + 'px)';
@@ -3233,6 +3256,7 @@
                 meshserver.send({ action: 'usergroups' });
                 meshserver.send({ action: 'meshes' });
                 meshserver.send({ action: 'nodes', id: '{{currentNode}}', skip: (devicePagingState == null) ? 0 : devicePagingState.skip });
+                meshserver.send({ action: 'getnotificationpolicy' });
                 meshserver.send({ action: 'loginTokens' });
                 if (pluginHandler != null) { meshserver.send({ action: 'plugins' }); }
                 if ('{{currentNode}}'.toLowerCase() == '') { meshserver.send({ action: 'files' }); }
@@ -3588,6 +3612,17 @@
                     }
                     break;
                 }
+                case 'notificationpolicy': {
+                    notificationPolicy = message;
+                    putstore('notifications', getstore('notifications', 0) & 17);
+                    if (accountSettingsTab == 'notifications') renderAccountNotificationSettings();
+                    if (notificationEditorPending != null) {
+                        var pendingEditor = notificationEditorPending;
+                        notificationEditorPending = null;
+                        showNotificationPolicyEditor(pendingEditor.scope, pendingEditor.scopeId);
+                    }
+                    break;
+                }
                 case 'userinfo': {
                     userinfo = message.userinfo;
                     updateSiteAdmin();
@@ -3705,6 +3740,10 @@
                     }
                     break;
                 }
+                case 'getdevicealerts': {
+                    updateDeviceAlerts(getNodeFromId(message.nodeid), message.alerts);
+                    break;
+                }
                 case 'software': {
                     try {
                         var softwareData = message.value;
@@ -3749,6 +3788,11 @@
 					break;
                 }
                 case 'msg': {
+                    if ((message.type === 'notify') && (message.alertType != null)) {
+                        var alertNotification = { text: message.value, title: message.title, icon: message.icon, id: message.id, nodeid: message.nodeid, tag: message.tag, alertType: message.alertType, alertPhase: message.alertPhase, severity: message.severity, ignorable: message.ignorable };
+                        addNotification(alertNotification);
+                        break;
+                    }
                     // Check if this is a message from a node
                     if (message.nodeid != null) {
                         var index = -1;
@@ -4242,6 +4286,7 @@
                 }
                 case 'verifyMessaging': {
                     if (xxdialogMode && (xxdialogTag != 'verifyMessaging')) return;
+                    if (message.success !== true) { setDialogMode(0); messagebox("Messaging Notifications", "Unable to send the verification message. For Telegram, open the bot and send /start before trying again."); break; }
                     var x = '<table><tr><td><img src="images/messaging40.png" style=padding:8px>';
                     x += '<td>' + "Check your messaging application and enter the verification code.";
                     x += '<br /><br /><div style=width:100%;text-align:center>' + "Verification code:" + ' <input type=tel pattern="[0-9]" inputmode="number" maxlength=6 id=d2phoneCodeInput onKeyUp=account_managePhoneCodeValidate() onkeypress="if (event.key==\'Enter\') account_managePhoneCodeValidate(1)"></div></table>';
@@ -4278,6 +4323,8 @@
                     break;
                 }
                 case 'event': {
+                    if ((message.event.action === 'notificationPolicyChange') || (message.event.action === 'alertCatalogChange')) { meshserver.send({ action: 'getnotificationpolicy' }); }
+                    if ((message.event.action === 'alertCatalogChange') && (currentNode != null)) { meshserver.send({ action: 'getdevicealerts', nodeid: currentNode._id }); }
                     if (!message.event.nolog) {
                         if (currentNode && (message.event.nodeid == currentNode._id) && (currentDeviceEvents != null)) {
                             // If this event has a nodeid and we are looking at this node, update the log in real time.
@@ -4526,11 +4573,11 @@
                                     nodes = newnodes;
 
                                     // If we are looking at a node that is no longer visible, move back to "My Devices"
-                                    if ((xxcurrentView >= 9) && (xxcurrentView < 20) && currentNode && !IsNodeViewable(currentNode)) { setDialogMode(0); go(1); }
+                                    if (isDevicePanel(xxcurrentView) && currentNode && !IsNodeViewable(currentNode)) { setDialogMode(0); go(1); }
                                 }
                             }
                             mainUpdate(4 + 128 + 8192 + 16384);
-                            if (currentNode && !IsNodeViewable(currentNode)) { currentNode = null; if ((xxcurrentView >= 9) && (xxcurrentView < 20)) { go(1); } }
+                            if (currentNode && !IsNodeViewable(currentNode)) { currentNode = null; if (isDevicePanel(xxcurrentView)) { go(1); } }
                             //meshserver.send({ action: 'files' }); // TODO: Why do we need to do this??
 
                             // If we are looking at a mesh that is now deleted, move back to "My Account"
@@ -4554,7 +4601,7 @@
                             // If we are looking at a mesh that is now deleted, move back to "My Account"
                             if (xxcurrentView >= 20 && xxcurrentView < 30 && currentMesh._id == message.event.meshid) { setDialogMode(0); go(2); }
                             // If we are looking at a node in the deleted mesh, move back to "My Devices"
-                            if (xxcurrentView >= 9 && xxcurrentView < 20 && currentNode && !IsNodeViewable(currentNode)) { setDialogMode(0); go(1); }
+                            if (isDevicePanel(xxcurrentView) && currentNode && !IsNodeViewable(currentNode)) { setDialogMode(0); go(1); }
                             break;
                         }
                         case 'addnode': {
@@ -4584,7 +4631,7 @@
                             if (index != -1) {
                                 var node = nodes[index];
                                 if (currentNode == node) {
-                                    if (xxcurrentView >= 9 && xxcurrentView < 20) { setDialogMode(0); go(1); }
+                                    if (isDevicePanel(xxcurrentView)) { setDialogMode(0); go(1); }
                                     currentNode = null;
                                     // TODO: Correctly disconnect from this node (Desktop/Terminal/Files...)
                                 }
@@ -4670,7 +4717,7 @@
                                         // We don't see the new mesh, remove this device
                                         // TODO: Correctly disconnect from this node (Desktop/Terminal/Files...)
                                         if ((currentNode != null) && (currentNode._id == node._id)) {
-                                            if ((xxcurrentView >= 9) && (xxcurrentView < 20) && !IsNodeViewable(currentNode)) { currentNode = null; setDialogMode(0); go(1); }
+                                            if (isDevicePanel(xxcurrentView) && !IsNodeViewable(currentNode)) { currentNode = null; setDialogMode(0); go(1); }
                                         }
                                         var index = -1;
                                         for (var i in nodes) { if (nodes[i]._id == message.event.nodeid) { index = i; break; } }
@@ -4707,7 +4754,7 @@
 
                                     // TODO: Correctly disconnect from this node (Desktop/Terminal/Files...)
                                     if ((currentNode != null) && (currentNode._id == node._id)) {
-                                        if ((xxcurrentView >= 9) && (xxcurrentView < 20) && !IsNodeViewable(currentNode)) { currentNode = null; setDialogMode(0); go(1); }
+                                        if (isDevicePanel(xxcurrentView) && !IsNodeViewable(currentNode)) { currentNode = null; setDialogMode(0); go(1); }
                                     }
                                     nodes.splice(index, 1);
                                     mainUpdate(4 | 16);
@@ -4736,6 +4783,15 @@
                             }
                             break;
                         }
+                        case 'devicealertactive':
+                        case 'devicealertresolved': {
+                            if ((currentNode != null) && (message.event.nodeid == currentNode._id)) { meshserver.send({ action: 'getdevicealerts', nodeid: currentNode._id }); }
+                            break;
+                        }
+                        case 'alertnotify': {
+                            addNotification(message.event.notification);
+                            break;
+                        }
                         case 'nodeconnect': {
                             // Indicated a node has changed connectivity state
                             var index = -1;
@@ -4744,15 +4800,15 @@
                                 var node = nodes[index];
 
                                 // Event the connection change if needed
-                                var n = getstore('notifications', 0); // Account notification settings
+                                var n = (notificationPolicy == null) ? getstore('notifications', 0) : ((notificationPolicyChannel('device.connection.connected', message.event.meshid, message.event.nodeid, 'web') ? 2 : 0) | (notificationPolicyChannel('device.connection.disconnected', message.event.meshid, message.event.nodeid, 'web') ? 4 : 0));
 
                                 // Per-group notification settings
-                                if (message.event.meshid && userinfo.links && userinfo.links[message.event.meshid] && userinfo.links[message.event.meshid].notify) {
+                                if ((notificationPolicy == null) && message.event.meshid && userinfo.links && userinfo.links[message.event.meshid] && userinfo.links[message.event.meshid].notify) {
                                     n |= userinfo.links[message.event.meshid].notify;
                                 }
 
                                 // Per-user notification settings
-                                if (userinfo.notify != null) {
+                                if ((notificationPolicy == null) && (userinfo.notify != null)) {
                                     if (userinfo.notify[message.event.meshid] != null) { n |= userinfo.notify[message.event.meshid]; }
                                     if (userinfo.notify[message.event.nodeid] != null) { n |= userinfo.notify[message.event.nodeid]; }
                                 }
@@ -4874,6 +4930,7 @@
                             // If the sysinfo document has changed and we are looking at it, request an update.
                             if ((currentNode != null) && (message.event.nodeid == powerTimelineReq)) {
                                 meshserver.send({ action: 'getsysinfo', nodeid: message.event.nodeid });
+                                meshserver.send({ action: 'getdevicealerts', nodeid: message.event.nodeid });
                             }
                             break;
                         }
@@ -8923,6 +8980,7 @@
                 QH('p17deviceName', nname);
                 QH('p18deviceName', nname);
                 QH('p19deviceName', nname);
+                QH('p119deviceName', nname);
 
                 // Node attributes
                 var x = '<table style=width:100%>';
@@ -9144,6 +9202,11 @@
                         if (devNotify & 128) { xx++; } if (devNotify & 256) { xx++; } if (devNotify & 512) { xx++; }
                         if (xx > 0) { devNotifyStr.push(format("Messaging ({0})", xx)); }
                     }
+                }
+                if (notificationPolicy != null) {
+                    var notificationOverrideCount = 0;
+                    for (var notificationRuleIndex in notificationPolicy.rules) { if ((notificationPolicy.rules[notificationRuleIndex].scope == 'node') && (notificationPolicy.rules[notificationRuleIndex].scopeId == node._id)) notificationOverrideCount += Object.keys(notificationPolicy.rules[notificationRuleIndex].channels).length; }
+                    devNotifyStr = [notificationOverrideCount ? format("{0} overrides", notificationOverrideCount) : "Inherited"];
                 }
                 devNotifyStr = devNotifyStr.join(', ');
                 if (devNotifyStr == '') { devNotifyStr = '<i>' + "None" + '</i>'; }
@@ -9384,6 +9447,7 @@
                 QV('MainDevFiles', (node.agent != null) && (node.agent.caps != null) && ((node.agent.caps & 4) != 0) && (meshrights & 8) && fileAccess);
                 QV('MainDevRegistry', (node.agent != null) && isWindowsNode(node) && (meshrights & 8) && ((meshrights == 0xFFFFFFFF) || ((meshrights & 4194304) == 0)));
                 QV('MainDevInfo', (node.mtype < 3) && ((meshrights & 1048576) != 0));
+                QV('MainDevAlerts', (node.mtype < 3) && ((meshrights & 1048576) != 0));
                 QV('MainDevApps', (node.agent != null) && (meshrights & 8) && ((meshrights == 0xFFFFFFFF) || ((meshrights & 8388608) == 0)));
                 QV('MainDevAmt', (node.intelamt != null) && ((node.intelamt.state == 2) || (node.conn & 2)) && (meshrights & 8) && amtAccess);
                 QV('MainDevConsole', (consoleRights && ((node.agent != null) && (node.agent.caps != null) && ((node.agent.caps & 8) != 0))) && (meshrights & 8));
@@ -9415,9 +9479,13 @@
                     meshserver.send({ action: 'powertimeline', nodeid: currentNode._id });
                     meshserver.send({ action: 'lastconnect', nodeid: currentNode._id });
                     meshserver.send({ action: 'getsysinfo', nodeid: currentNode._id });
+                    meshserver.send({ action: 'getdevicealerts', nodeid: currentNode._id });
                     meshserver.send({ action: 'getnetworkinfo', nodeid: currentNode._id });
                     meshserver.send({ action: 'getNotes', id: currentNode._id });
                     QH('p17info2', '');
+                    QH('p119alerts', '');
+                    DeviceAlerts = null;
+                    DeviceAlertsNodeId = null;
                 }
 
                 // Request device sharing
@@ -9434,7 +9502,7 @@
                 refreshDeviceEvents();
 
                 // Update the web page title
-                if ((currentNode) && (xxcurrentView >= 9) && (xxcurrentView < 20)) {
+                if ((currentNode) && isDevicePanel(xxcurrentView)) {
                     document.title = currentNode.name + (mesh ? (' - ' + mesh.name) : '') + ' - ' + decodeURIComponent('{{{extitle}}}');
                 } else {
                     document.title = decodeURIComponent('{{{extitle}}}');
@@ -9542,7 +9610,7 @@
 
                 // Change the URL
                 var urlviewmode = '';
-                if (((features & 0x10000000) == 0) && (xxcurrentView >= 9) && (xxcurrentView <= 19) && (currentNode != null)) {
+                if (((features & 0x10000000) == 0) && isDevicePanel(xxcurrentView) && (currentNode != null)) {
                     urlviewmode = '?viewmode=' + xxcurrentView + '&gotonode=' + currentNode._id.split('/')[2];
                     for (var i in urlargs) { urlviewmode += ('&' + i + '=' + urlargs[i]); }
                     try { window.history.replaceState({}, document.title, window.location.pathname + urlviewmode); } catch (ex) { }
@@ -9570,6 +9638,7 @@
         }
 
         function p20editDeviceNotify() {
+            return showNotificationPolicyEditor('node', currentNode._id);
             if (xxdialogMode) return false;
             var devNotify = 0, fx = ((features2 & 0x00004000) && (userinfo.emailVerified)) ? 1 : 0;
             if (userinfo.notify && userinfo.notify[currentNode._id]) { devNotify = userinfo.notify[currentNode._id]; }
@@ -15276,6 +15345,7 @@
 
         function refreshDetails() {
             meshserver.send({ action: 'msg', type: 'sysinfo', nodeid: currentNode._id });
+            meshserver.send({ action: 'getdevicealerts', nodeid: currentNode._id });
         }
 
         function deviceDetailsStatsClear() {
@@ -15321,6 +15391,45 @@
         var DeviceDetailsHardware = null;
         var DeviceDetailsNetwork = null;
         var DeviceDetailsNodeId = null;
+        var DeviceAlerts = null;
+        var DeviceAlertsNodeId = null;
+        function updateDeviceAlerts(node, alerts) {
+            if ((node == null) || (currentNode == null) || (currentNode._id != node._id)) return;
+            DeviceAlertsNodeId = node._id;
+            DeviceAlerts = Array.isArray(alerts) ? alerts : [];
+            QH('p119alerts', deviceAlertsDetailHtml(DeviceAlerts));
+        }
+
+        function deviceAlertsDetailHtml(alerts) {
+            var x = '', currentGroup = null, groupHtml = '', summaryHtml = '';
+            for (var alertIndex = 0; alertIndex < alerts.length; alertIndex++) {
+                var alert = alerts[alertIndex], emoji = '\u26ab', status = "Unknown";
+                if (alert.state == 'healthy') { emoji = '\ud83d\udfe2'; status = "Healthy"; }
+                else if (alert.state == 'active') { status = (alert.severity == 'critical') ? "Critical" : "Requires attention"; emoji = (alert.severity == 'critical') ? '\ud83d\udd34' : '\ud83d\udfe0'; }
+                var alertHtml = '<div style=padding:3px 0><span style=margin-right:6px>' + emoji + '</span><b>' + EscapeHtml(alert.title || alert.alertType) + '</b> - ' + EscapeHtml(status) + '</div>';
+                var details = [];
+                if (Array.isArray(alert.instances)) {
+                    for (var instanceIndex = 0; instanceIndex < alert.instances.length; instanceIndex++) {
+                        var instance = alert.instances[instanceIndex], detail = '';
+                        if (typeof instance.detail == 'string') detail = instance.detail;
+                        if (instance.variables != null) { try { detail += (detail ? ': ' : '') + JSON.stringify(instance.variables); } catch (ex) { } }
+                        if (detail) details.push(((alert.instances.length > 1) && instance.instanceKey ? (instance.instanceKey + ': ') : '') + detail);
+                    }
+                }
+                if (details.length > 0) alertHtml += '<div style=margin-left:28px;color:gray>' + EscapeHtml(details.join('; ')) + '</div>';
+                if (alert.state == 'active') summaryHtml += alertHtml;
+                if (alert.group != currentGroup) {
+                    if (currentGroup != null) x += '<table style=width:100%><tr><td style=width:64px;vertical-align:top;text-align:center;font-size:32px>\ud83d\udd14</td><td><div class=DevSt style=margin-bottom:3px;margin-left:16px><b>' + EscapeHtml(currentGroup || "Other") + '</b></div><div style=margin-bottom:10px;margin-left:16px>' + groupHtml + '</div></td></tr></table>';
+                    currentGroup = alert.group;
+                    groupHtml = '';
+                }
+                groupHtml += alertHtml;
+            }
+            if (currentGroup != null) x += '<table style=width:100%><tr><td style=width:64px;vertical-align:top;text-align:center;font-size:32px>\ud83d\udd14</td><td><div class=DevSt style=margin-bottom:3px;margin-left:16px><b>' + EscapeHtml(currentGroup || "Other") + '</b></div><div style=margin-bottom:10px;margin-left:16px>' + groupHtml + '</div></td></tr></table>';
+            var summary = '<table style=width:100%><tr><td style=width:64px;vertical-align:top;text-align:center;font-size:32px>\u26a0\ufe0f</td><td><div class=DevSt style=margin-bottom:3px;margin-left:16px><b>' + "Summary" + '</b></div><div style=margin-bottom:10px;margin-left:16px>' + (summaryHtml || '<i>' + "No checks require attention." + '</i>') + '</div></td></tr></table>';
+            return summary + (x || '<i>' + "No alert checks are available." + '</i>');
+        }
+
         function updateDeviceDetails(node, hardware, network) {
             if (currentNode == null) return;
             if (node == null) { node = currentNode; }
@@ -16523,7 +16632,7 @@
             else if (Q('d2serviceselect').value == 64) { Q('d2handleinput')['placeholder'] = "Topic"; }
             else if (Q('d2serviceselect').value == 128) { Q('d2handleinput')['placeholder'] = "username@sample.com"; }
             else if (Q('d2serviceselect').value == 256) { Q('d2handleinput')['placeholder'] = 'https://hooks.slack.com/...'; }
-            else { Q('d2handleinput')['placeholder'] = "Username"; }
+            else { Q('d2handleinput')['placeholder'] = "Username or chat ID"; }
             var ok = (Q('d2handleinput').value.length > 0); QE('idx_dlgOkButton', ok); if ((x == 1) && ok) { dialogclose(1); }
         }
         function account_manageMessagingAdd() { if (Q('d2handleinput').value.length == 0) return; QE('d2handleinput', false); meshserver.send({ action: 'verifyMessaging', service: Q('d2serviceselect').value, handle: Q('d2handleinput').value }); return false; }
@@ -16743,6 +16852,7 @@
         }
 
         function account_showAccountNotifySettings() {
+            return accountSelectSettingsTab('notifications');
             if (xxdialogMode) return false;
             var x = '';
             x += '<div class="form-check"><label><input id=p2notifyPlayNotifySound class="form-check-input me-2" type=checkbox />' + "Notification sound" + '</label></div>';
@@ -17467,6 +17577,11 @@
                         var xx = 0;
                         if (meshNotify & 128) { xx++; } if (meshNotify & 256) { xx++; } if (meshNotify & 512) { xx++; }
                         if (xx > 0) { meshNotifyStr.push(format("Messaging ({0})", xx)); }
+                    }
+                    if (notificationPolicy != null) {
+                        var notificationOverrideCount = 0;
+                        for (var notificationRuleIndex in notificationPolicy.rules) { if ((notificationPolicy.rules[notificationRuleIndex].scope == 'mesh') && (notificationPolicy.rules[notificationRuleIndex].scopeId == currentMesh._id)) notificationOverrideCount += Object.keys(notificationPolicy.rules[notificationRuleIndex].channels).length; }
+                        meshNotifyStr = [notificationOverrideCount ? format("{0} overrides", notificationOverrideCount) : "Inherited"];
                     }
                     if (meshNotifyStr.length == 0) { meshNotifyStr.push('<i>' + "None" + '</i>'); }
                     x += addHtmlValue("Notifications", addLink(meshNotifyStr.join(', '), 'p20editMeshNotify()'));
@@ -18577,6 +18692,7 @@
         }
 
         function p20editMeshNotify() {
+            return showNotificationPolicyEditor('mesh', currentMesh._id);
             if (xxdialogMode) return false;
             var meshNotify = 0;
             var emailNotify = ((features2 & 0x00004000) && (userinfo.emailVerified));
@@ -22292,7 +22408,194 @@
         // NOTIFICATIONS
         //
 
-        var notifications = [];
+        var notifications = [], notificationPolicy = null, notificationEditorContext = null, notificationEditorPending = null, accountSettingsTab = 'general';
+
+        function accountSelectSettingsTab(tab) {
+            accountSettingsTab = (tab == 'notifications') ? 'notifications' : 'general';
+            if (xxcurrentView != 2) go(2);
+            QV('p2info', accountSettingsTab == 'general');
+            QV('p2notifications', accountSettingsTab == 'notifications');
+            QC('p2settingsGeneralTab').remove('active');
+            QC('p2settingsNotificationsTab').remove('active');
+            QC((accountSettingsTab == 'general') ? 'p2settingsGeneralTab' : 'p2settingsNotificationsTab').add('active');
+            if (accountSettingsTab == 'notifications') {
+                if (notificationPolicy == null) {
+                    QH('p2notifications', '<div class="p-3">' + "Loading..." + '</div>');
+                    meshserver.send({ action: 'getnotificationpolicy' });
+                } else {
+                    renderAccountNotificationSettings();
+                }
+            }
+            return false;
+        }
+
+        function renderAccountNotificationSettings() {
+            if ((accountSettingsTab != 'notifications') || (notificationPolicy == null)) return;
+            var x = '<div class="p-2">';
+            x += '<div class="mb-3"><label class="form-check form-check-inline"><input id=notificationPolicySound class="form-check-input" type=checkbox> <span class="form-check-label">' + "Notification sound" + '</span></label><label class="form-check form-check-inline"><input id=notificationPolicyGroupName class="form-check-input" type=checkbox> <span class="form-check-label">' + "Display device group name" + '</span></label></div>';
+            x += '<input id=notificationPolicySearch type=search class="form-control mb-3" placeholder="' + "Search notifications" + '" onkeyup="notificationPolicyFilter(this.value)" style="max-width:620px">';
+            notificationEditorContext = { scope: 'account', scopeId: null, controls: [] };
+            var lastGroup = null, groupIndex = -1;
+            for (var i = 0; i < notificationPolicy.catalog.length; i++) {
+                var definition = notificationPolicy.catalog[i];
+                if (definition.group != lastGroup) {
+                    if (lastGroup != null) x += '</tbody></table></div>';
+                    groupIndex++;
+                    x += '<div class="notificationPolicySection card mb-3" data-notification-group="' + groupIndex + '"><div class="card-header"><b>' + EscapeHtml(definition.group) + '</b><span class="float-end small">';
+                    var bulkChannels = ['web', 'email', 'messaging'], bulkLabels = ["Web", "Email", "Messaging"];
+                    for (var b = 0; b < bulkChannels.length; b++) {
+                        var bulkSupported = false;
+                        for (var k = 0; k < notificationPolicy.catalog.length; k++) { if ((notificationPolicy.catalog[k].group == definition.group) && (notificationPolicy.catalog[k].channels.indexOf(bulkChannels[b]) >= 0)) { bulkSupported = true; break; } }
+                        var bulkAvailable = bulkSupported && (notificationPolicy.channelsAvailable != null) && (notificationPolicy.channelsAvailable[bulkChannels[b]] === true);
+                        x += '<span class="ms-3">' + bulkLabels[b] + ': <button class="btn btn-sm btn-outline-secondary py-0" type=button onclick="notificationPolicyToggleGroup(' + groupIndex + ',\'' + bulkChannels[b] + '\',true)"' + (bulkAvailable ? '' : ' disabled') + '>' + "Mark all" + '</button> <button class="btn btn-sm btn-outline-secondary py-0" type=button onclick="notificationPolicyToggleGroup(' + groupIndex + ',\'' + bulkChannels[b] + '\',false)"' + (bulkAvailable ? '' : ' disabled') + '>' + "Clear all" + '</button></span>';
+                    }
+                    x += '</span></div><table class="table table-sm table-hover mb-0"><thead><tr><th>' + "Notification" + '</th><th class=text-center style=width:90px>' + "Web" + '</th><th class=text-center style=width:90px>' + "Email" + '</th><th class=text-center style=width:90px>' + "Messaging" + '</th></tr></thead><tbody>';
+                    lastGroup = definition.group;
+                }
+                x += '<tr class=notificationPolicyRow data-search="' + EscapeHtml((definition.group + ' ' + definition.title).toLowerCase()) + '"><td>' + EscapeHtml(definition.title) + '</td>';
+                var rule = notificationPolicyRule('account', null, definition.id);
+                for (var c = 0; c < 3; c++) {
+                    var channel = ['web', 'email', 'messaging'][c], supported = (definition.channels.indexOf(channel) >= 0);
+                    var available = supported && (notificationPolicy.channelsAvailable != null) && (notificationPolicy.channelsAvailable[channel] === true);
+                    var controlId = 'notificationPolicyAccount_' + i + '_' + channel;
+                    if (!supported) {
+                        x += '<td class="text-center text-muted">—</td>';
+                    } else {
+                        var checked = (rule != null) && (rule.channels[channel] === true);
+                        x += '<td class=text-center><input id="' + controlId + '" class="form-check-input" type=checkbox' + (checked ? ' checked' : '') + (available ? '' : ' disabled title="' + "Channel is not configured" + '"') + '></td>';
+                        notificationEditorContext.controls.push({ id: controlId, alertType: definition.id, channel: channel, group: groupIndex, checkbox: true, oldValue: checked ? '1' : '0', available: available });
+                    }
+                }
+                x += '</tr>';
+            }
+            if (lastGroup != null) x += '</tbody></table></div>';
+            if (notificationPolicy.ignored && (notificationPolicy.ignored.length > 0)) {
+                var ignoredHtml = '';
+                for (var j = 0; j < notificationPolicy.ignored.length; j++) {
+                    var ignored = notificationPolicy.ignored[j], node = getNodeFromId(ignored.nodeid), ignoredDefinition = null;
+                    for (var k = 0; k < notificationPolicy.catalog.length; k++) { if (notificationPolicy.catalog[k].id == ignored.alertType) ignoredDefinition = notificationPolicy.catalog[k]; }
+                    var ignoredNodeName = (node != null) ? node.name : (ignored.deviceName || ignored.nodeid);
+                    if (ignoredDefinition != null) ignoredHtml += '<div class="my-1">' + EscapeHtml(ignoredNodeName) + ' — ' + EscapeHtml(ignoredDefinition.title) + ' <button class="btn btn-sm btn-outline-secondary py-0" type=button onclick="notificationPolicyReactivate(' + j + ')">' + "Reactivate" + '</button></div>';
+                }
+                if (ignoredHtml != '') x += '<div class="border-top mt-3 pt-2"><b>' + "Ignored alerts" + '</b>' + ignoredHtml + '</div>';
+            }
+            x += '<div class="mt-3"><button class="btn btn-primary" type=button onclick="saveNotificationPolicyEditor()">' + "Save changes" + '</button> <span id=notificationPolicySaveStatus class="ms-2 text-muted"></span></div></div>';
+            QH('p2notifications', x);
+            var visual = getstore('notifications', 0);
+            Q('notificationPolicySound').checked = ((visual & 1) != 0);
+            Q('notificationPolicyGroupName').checked = ((visual & 16) != 0);
+        }
+
+        function notificationPolicyToggleGroup(group, channel, checked) {
+            if (notificationEditorContext == null) return;
+            for (var i = 0; i < notificationEditorContext.controls.length; i++) {
+                var control = notificationEditorContext.controls[i];
+                if (control.checkbox && control.available && (control.group == group) && (control.channel == channel)) Q(control.id).checked = checked;
+            }
+        }
+        function notificationPolicyChannel(alertType, meshid, nodeid, channel) {
+            if ((notificationPolicy == null) || !Array.isArray(notificationPolicy.rules)) return false;
+            for (var scopeIndex = 0; scopeIndex < 3; scopeIndex++) {
+                var scope = ['node', 'mesh', 'account'][scopeIndex], scopeId = (scope == 'node') ? nodeid : meshid;
+                var rule = notificationPolicyRule(scope, scopeId, alertType);
+                if ((rule != null) && (typeof rule.channels[channel] == 'boolean')) return rule.channels[channel];
+            }
+            return false;
+        }
+
+        function notificationPolicyRule(scope, scopeId, alertType) {
+            if ((notificationPolicy == null) || !Array.isArray(notificationPolicy.rules)) return null;
+            for (var i in notificationPolicy.rules) {
+                var rule = notificationPolicy.rules[i];
+                if ((rule.scope == scope) && (rule.alertType == alertType) && ((scope == 'account') || (rule.scopeId == scopeId))) return rule;
+            }
+            return null;
+        }
+
+        function notificationPolicyFilter(value) {
+            value = value.toLowerCase();
+            var rows = document.getElementsByClassName('notificationPolicyRow');
+            for (var i = 0; i < rows.length; i++) { rows[i].style.display = (rows[i].getAttribute('data-search').indexOf(value) >= 0) ? '' : 'none'; }
+        }
+
+        function showNotificationPolicyEditor(scope, scopeId) {
+            if (scope == 'account') return accountSelectSettingsTab('notifications');
+            if (xxdialogMode) return false;
+            if (notificationPolicy == null) { notificationEditorPending = { scope: scope, scopeId: scopeId }; meshserver.send({ action: 'getnotificationpolicy' }); return false; }
+            var x = '<input type=search placeholder="' + "Search notifications" + '" onkeyup="notificationPolicyFilter(this.value)" style="width:100%;margin-bottom:8px">';
+            if (scope == 'account') {
+                x += '<div style="margin-bottom:8px"><label><input id=notificationPolicySound type=checkbox> ' + "Notification sound" + '</label><br><label><input id=notificationPolicyGroupName type=checkbox> ' + "Display device group name" + '</label></div>';
+            }
+            x += '<div style="max-height:420px;overflow:auto"><table style="width:100%;border-collapse:collapse"><tr><th style=text-align:left>' + "Notification" + '</th><th>' + "Web" + '</th><th>' + "Email" + '</th><th>' + "Messaging" + '</th></tr>';
+            notificationEditorContext = { scope: scope, scopeId: scopeId, controls: [] };
+            var lastGroup = null;
+            for (var i = 0; i < notificationPolicy.catalog.length; i++) {
+                var definition = notificationPolicy.catalog[i];
+                if (definition.group != lastGroup) { x += '<tr><td colspan=4 style="padding-top:8px;border-bottom:1px solid #888"><b>' + EscapeHtml(definition.group) + '</b></td></tr>'; lastGroup = definition.group; }
+                x += '<tr class=notificationPolicyRow data-search="' + EscapeHtml((definition.group + ' ' + definition.title).toLowerCase()) + '"><td style="padding:4px">' + EscapeHtml(definition.title) + '</td>';
+                var rule = notificationPolicyRule(scope, scopeId, definition.id);
+                for (var c = 0; c < 3; c++) {
+                    var channel = ['web', 'email', 'messaging'][c], supported = (definition.channels.indexOf(channel) >= 0);
+                    var available = supported && (notificationPolicy.channelsAvailable != null) && (notificationPolicy.channelsAvailable[channel] === true);
+                    var controlId = 'notificationPolicy_' + i + '_' + channel;
+                    if (!supported) {
+                        x += '<td style=text-align:center;color:#888>—</td>';
+                    } else {
+                        var value = ((rule != null) && (typeof rule.channels[channel] == 'boolean')) ? (rule.channels[channel] ? '1' : '0') : '-1';
+                        x += '<td style=text-align:center><select id="' + controlId + '"' + (available ? '' : ' disabled title="' + "Channel is not configured" + '"') + '>';
+                        if (scope != 'account') x += '<option value=-1' + ((value == '-1') ? ' selected' : '') + '>' + "Inherit" + '</option>';
+                        x += '<option value=1' + ((value == '1') ? ' selected' : '') + '>' + "On" + '</option><option value=0' + (((value == '0') || ((scope == 'account') && (value == '-1'))) ? ' selected' : '') + '>' + "Off" + '</option></select></td>';
+                        notificationEditorContext.controls.push({ id: controlId, alertType: definition.id, channel: channel, oldValue: ((scope == 'account') && (value == '-1')) ? '0' : value, available: available });
+                    }
+                }
+                x += '</tr>';
+            }
+            x += '</table></div>';
+            if ((scope == 'account') && notificationPolicy.ignored && (notificationPolicy.ignored.length > 0)) {
+                var ignoredHtml = '';
+                for (var j = 0; j < notificationPolicy.ignored.length; j++) {
+                    var ignored = notificationPolicy.ignored[j], node = getNodeFromId(ignored.nodeid);
+                    var ignoredDefinition = null;
+                    for (var k = 0; k < notificationPolicy.catalog.length; k++) { if (notificationPolicy.catalog[k].id == ignored.alertType) ignoredDefinition = notificationPolicy.catalog[k]; }
+                    var ignoredNodeName = (node != null) ? node.name : (ignored.deviceName || ignored.nodeid);
+                    if (ignoredDefinition != null) ignoredHtml += '<div style="margin:4px">' + EscapeHtml(ignoredNodeName) + ' — ' + EscapeHtml(ignoredDefinition.title) + ' <span style="color:orange;cursor:pointer" onclick="notificationPolicyReactivate(' + j + ')">' + "Reactivate" + '</span></div>';
+                }
+                if (ignoredHtml != '') x += '<div style="border-top:1px solid #888;margin-top:8px;padding-top:6px"><b>' + "Ignored alerts" + '</b>' + ignoredHtml + '</div>';
+            }
+            setDialogMode(2, "Notification Settings", 3, saveNotificationPolicyEditor, x);
+            if (scope == 'account') {
+                var visual = getstore('notifications', 0);
+                Q('notificationPolicySound').checked = ((visual & 1) != 0);
+                Q('notificationPolicyGroupName').checked = ((visual & 16) != 0);
+            }
+            return false;
+        }
+
+        function saveNotificationPolicyEditor() {
+            if (notificationEditorContext == null) return;
+            if (notificationEditorContext.scope == 'account') {
+                putstore('notifications', (Q('notificationPolicySound').checked ? 1 : 0) + (Q('notificationPolicyGroupName').checked ? 16 : 0));
+            }
+            for (var i = 0; i < notificationEditorContext.controls.length; i++) {
+                var control = notificationEditorContext.controls[i];
+                if (!control.available) continue;
+                var value = control.checkbox ? (Q(control.id).checked ? '1' : '0') : Q(control.id).value;
+                if (value == control.oldValue) continue;
+                var channels = {};
+                channels[control.channel] = (value == '-1') ? null : (value == '1');
+                meshserver.send({ action: 'setnotificationrule', scope: notificationEditorContext.scope, scopeid: notificationEditorContext.scopeId, alerttype: control.alertType, channels: channels });
+            }
+            notificationEditorContext = null;
+            if ((accountSettingsTab == 'notifications') && (Q('notificationPolicySaveStatus') != null)) QH('notificationPolicySaveStatus', "Saved");
+        }
+
+        function notificationPolicyReactivate(index) {
+            if ((notificationPolicy == null) || (notificationPolicy.ignored == null) || (notificationPolicy.ignored[index] == null)) return;
+            var ignored = notificationPolicy.ignored[index];
+            meshserver.send({ action: 'setnotificationignore', nodeid: ignored.nodeid, alerttype: ignored.alertType, ignored: false });
+            if (accountSettingsTab != 'notifications') dialogclose(0);
+        }
+
 
         // Toggle showing notifications
         function clickNotificationIcon(show) {
@@ -22344,7 +22647,8 @@
 
                     r += '<div title="' + format("Occured at {0}", printDateTime(d)) + '" id="notifyx' + n.id + '" class=notification style="cursor:pointer;' + (notifications.length > 1 ? 'border-top:1px solid orange' : '') + '">';
                     if (icon) { r += '<div class=j' + icon + ' onclick="notificationSelected(' + n.id + ')" style=margin:5px;float:left></div>'; }
-                    r += '<div onclick="notificationDelete(' + n.id + ')" class=unselectable title="' + "Clear this notification" + '" style=margin:5px;float:right;color:orange><b>X</b></div><div onclick="notificationSelected(' + n.id + ')" style=margin:5px>' + t + EscapeHtml(n.text) + '</div><div style=margin-left:5px;margin-bottom:5px;color:gray;font-size:10px>' + printDateTime(d) + '</div></div>';
+                    var ignoreLink = n.ignorable ? (' <span style="color:orange;cursor:pointer" onclick="notificationIgnore(' + n.id + ',event)">' + "Ignore" + '</span>') : '';
+                    r += '<div onclick="notificationDelete(' + n.id + ')" class=unselectable title="' + "Clear this notification" + '" style=margin:5px;float:right;color:orange><b>X</b></div><div onclick="notificationSelected(' + n.id + ')" style=margin:5px>' + t + EscapeHtml(n.text) + '</div><div style=margin-left:5px;margin-bottom:5px;color:gray;font-size:10px>' + printDateTime(d) + ignoreLink + '</div></div>';
                 }
             }
             var deleteall = '';
@@ -22391,7 +22695,7 @@
             if (e != null) {
                 for (var i in notifications) { if (notifications[i].id == id) { j = i; } }
                 if (j != -1) {
-                    meshserver.send({ action: 'intersession', subaction: 'removeNotify', id: id }); // Remove the notification in other sessions of the same user.
+                    if (notifications[j].alertType == null) { meshserver.send({ action: 'intersession', subaction: 'removeNotify', id: id }); } // Alert cards are closed only in this session.
                     if (notifications[j].notification) { notifications[j].notification.close(); delete notifications[j].notification; }
                     notifications.splice(j, 1);
                     e.parentNode.removeChild(e);
@@ -22402,6 +22706,18 @@
                         var n = notifications[0];
                         QS('notifyx' + n.id)['border-top'] = '1px solid transparent';
                     }
+                }
+            }
+        }
+
+        function notificationIgnore(id, event) {
+            if (event) { event.stopPropagation(); }
+            for (var i in notifications) {
+                var n = notifications[i];
+                if ((n.id == id) && n.ignorable && n.nodeid && n.alertType) {
+                    meshserver.send({ action: 'setnotificationignore', nodeid: n.nodeid, alerttype: n.alertType, ignored: true });
+                    notificationDelete(id);
+                    return;
                 }
             }
         }
@@ -23074,8 +23390,10 @@
         }
 
         function getTabGroup(v) {
-            return (v === 9) ? 1 : Math.floor(v / 10);
+            return isDevicePanel(v) ? 1 : Math.floor(v / 10);
         }
+
+        function isDevicePanel(v) { return ((v >= 9) && (v <= 19)) || (v == 119); }
 
         function go(x, event) {
             if (event && ((event.which == 3) || (event.button == 2))) return; // ignore right clicks as they are handled elsewhere
@@ -23095,7 +23413,7 @@
             if (event && ((event.shiftKey == true) || (event.which == 2) || (event.button == 1)) && (x != 15) && ('{{{currentNode}}}'.toLowerCase() == '')) {
                 // Open the device in a different tab
                 event.preventDefault();
-                if ((x >= 9) && (x <= 19)) {
+                if (isDevicePanel(x)) {
                     if (currentNode) { safeNewWindow(window.location.origin + '{{{domainurl}}}' + '?gotonode=' + currentNode._id.split('/')[2] + '&viewmode=' + x + '&hide=16' + ((urlargs.key) ? ('&key=' + urlargs.key) : ''), 'meshcentral:' + currentNode._id); }
                 } else if ((x >= 20) && (x <= 29)) {
                     if (currentMesh) { safeNewWindow(window.location.origin + '{{{domainurl}}}' + '?gotomesh=' + currentMesh._id.split('/')[2] + '&viewmode=' + x + '&hide=16' + ((urlargs.key) ? ('&key=' + urlargs.key) : ''), 'meshcentral:' + currentMesh._id); }
@@ -23129,6 +23447,7 @@
 
             // Edit this line when adding a new screen
             for (var i = 0; i < 61; i++) { QV('p' + i, i == x); }
+            QV('p119', x == 119);
             xxcurrentView = x;
 
             // Get out of fullscreen if needed
@@ -23137,7 +23456,7 @@
             // Change the URL
             if (((features & 0x10000000) == 0) && (xxcurrentView > 0)) {
                 var urlviewmode = '';
-                if ((xxcurrentView >= 9) && (xxcurrentView <= 19)) { // Device Link
+                if (isDevicePanel(xxcurrentView)) { // Device Link
                     if (currentNode != null) { urlviewmode = '?viewmode=' + xxcurrentView + '&gotonode=' + currentNode._id.split('/')[2]; }
                 } else if ((xxcurrentView >= 20) && (xxcurrentView <= 29)) { // Device Group Link
                     if (currentMesh != null) { urlviewmode = '?viewmode=' + xxcurrentView + '&gotomesh=' + currentMesh._id.split('/')[2]; }
@@ -23172,7 +23491,7 @@
             if (goBackStack.length > 0) { backView = goBackStack[goBackStack.length - 1]; }
 
             // My Devices
-            if (x == 1 || (backView == 1) || ((backView == 0) && (x >= 9 && x < 20))) {
+            if (x == 1 || (backView == 1) || ((backView == 0) && isDevicePanel(x))) {
                 QC('MainMenuMyDevices').add(mainMenuActiveClass);
                 QC('LeftMenuMyDevices').add(leftMenuActiveClass);
             } else if (x == 2 || (backView == 2) || ((backView == 0) && (x >= 20 && x < 30))) {
@@ -23205,13 +23524,13 @@
             QV('topbar', x != 0);
             if ((x == 0) && (webPageFullScreen)) { QC('body').add('arg_hide'); }
 
-            QV('MainSubMenuSpan', (x >= 9) && (x < 20));
+            QV('MainSubMenuSpan', isDevicePanel(x));
             QV('MeshSubMenuSpan', (x >= 20) && (x < 30));
             QV('UserSubMenuSpan', (x >= 30) && (x < 40));
             QV('ServerSubMenuSpan', x == 6 || x == 115 || x == 40 || x == 41 || x == 42 || x == 43);
             QV('UsersSubMenuSpan', x == 4 || x == 50 || x == 52);
             QV('EventsSubMenuSpan', (x == 3) || (x == 60));
-            var panels = { 3: 'EventsLive', 4: 'UsersGeneral', 9: 'MainDevRegistry', 10: 'MainDev', 11: 'MainDevDesktop', 12: 'MainDevTerminal', 13: 'MainDevFiles', 14: 'MainDevAmt', 15: 'MainDevConsole', 16: 'MainDevEvents', 17: 'MainDevInfo', 18: 'MainDevApps', 19: 'MainDevPlugins', 20: 'MeshGeneral', 21: 'MeshSummary', 30: 'UserGeneral', 31: 'UserEvents', 6: 'ServerGeneral', 40: 'ServerStats', 41: 'ServerTrace', 42: 'ServerPlugins', 50: 'UsersGroups', 52: 'UsersRecordings', 60: 'EventsReport', 115: 'ServerConsole' };
+            var panels = { 3: 'EventsLive', 4: 'UsersGeneral', 9: 'MainDevRegistry', 10: 'MainDev', 11: 'MainDevDesktop', 12: 'MainDevTerminal', 13: 'MainDevFiles', 14: 'MainDevAmt', 15: 'MainDevConsole', 16: 'MainDevEvents', 17: 'MainDevInfo', 18: 'MainDevApps', 19: 'MainDevPlugins', 20: 'MeshGeneral', 21: 'MeshSummary', 30: 'UserGeneral', 31: 'UserEvents', 6: 'ServerGeneral', 40: 'ServerStats', 41: 'ServerTrace', 42: 'ServerPlugins', 50: 'UsersGroups', 52: 'UsersRecordings', 60: 'EventsReport', 115: 'ServerConsole', 119: 'MainDevAlerts' };
 
 
             for (var i in panels) {
@@ -23249,9 +23568,10 @@
             // Update terminal size
             if ((x == 12) && (xtermfit != null)) { xtermfit.fit(); xterm.focus(); }
             if (x == 9) { setupRegistry(); }
+            if ((x == 119) && (currentNode != null)) { meshserver.send({ action: 'getdevicealerts', nodeid: currentNode._id }); }
 
             // Update the web page title
-            if ((currentNode) && (x >= 9) && (x < 20)) {
+            if ((currentNode) && isDevicePanel(x)) {
                 document.title = currentNode.name + ((meshes[currentNode.meshid]) ? (' - ' + meshes[currentNode.meshid].name) : '') + ' - ' + decodeURIComponent('{{{extitle}}}');
             } else {
                 document.title = decodeURIComponent('{{{extitle}}}');
